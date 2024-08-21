@@ -9,6 +9,12 @@ Welcome to **KeyValor**, the resilient and reliable key-value store that’s her
 - **Built with Go**: Leveraging the power of Golang, KeyValor is lightweight, concurrent, and efficient.
 - **Flexibility and Power**: From simple GETs and SETs to more complex operations, KeyValor offers a rich set of commands to handle your data needs.
 
+## TODO: 
+- **Support LRU caching of keys and their values**
+- **Exploring not having to load entire index into memory at all times, and instead caching parrts of it**
+- **Exploring MVCC support for keys**
+- **Breaking down storage into independent parts, to avoid locking entire keyspace for every operation**
+
 ## 📦 Installation
 
 Getting started with KeyValor is as simple as:
