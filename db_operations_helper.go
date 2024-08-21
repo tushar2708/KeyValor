@@ -104,7 +104,7 @@ func (db *KeyValorDatabase) set(
 	}
 
 	// write (append) to the file
-	offset, err := file.Write(buf.Bytes())
+	_, err := file.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (db *KeyValorDatabase) set(
 	db.keyLocationIndex[key] = index.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
-		RecordOffset: offset,
+		RecordOffset: file.GetCurrentOffset(),
 		RecordSize:   len(buf.Bytes()),
 	}
 	return nil

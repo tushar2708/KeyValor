@@ -133,7 +133,7 @@ func (db *KeyValorDatabase) AllKeys(key string) ([]string, error) {
 	return keysMatchingRegex(db.keyLocationIndex, "*")
 }
 
-func (db *KeyValorDatabase) Keys(key string, regex string) ([]string, error) {
+func (db *KeyValorDatabase) Keys(regex string) ([]string, error) {
 	db.RLock()
 	defer db.RUnlock()
 
@@ -142,9 +142,13 @@ func (db *KeyValorDatabase) Keys(key string, regex string) ([]string, error) {
 
 func keysMatchingRegex(index index.LogStructuredKeyIndex, pattern string) ([]string, error) {
 	// Compile the regex pattern
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+	var re *regexp.Regexp
+	var err error
+	if pattern != "*" {
+		re, err = regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern: %w", err)
+		}
 	}
 
 	var matchingKeys []string

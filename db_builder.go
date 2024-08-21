@@ -1,12 +1,15 @@
 package KeyValor
 
-import "time"
+import (
+	"KeyValor/constants"
+	"time"
+)
 
 const (
 	defaultSyncInterval      = time.Minute * 1
-	defaultCompactInterval   = time.Hour * 6
+	defaultCompactInterval   = time.Hour * 2
 	defaultFileSizeInterval  = time.Minute * 1
-	defaultMaxActiveFileSize = int64(1 << 32) // 4GB.
+	defaultMaxActiveFileSize = 5 * constants.MB
 )
 
 func DefaultOpts() *DBCfgOpts {

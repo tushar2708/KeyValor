@@ -112,6 +112,10 @@ func (df *DataFile) Write(p []byte) (int, error) {
 	return n, err
 }
 
+func (df *DataFile) GetCurrentOffset() int {
+	return df.offset
+}
+
 func (df *DataFile) Read(pos int, size int) ([]byte, error) {
 	df.RLock()
 	defer df.RUnlock()
