@@ -1,4 +1,4 @@
-package hashtablestorage
+package hashtable
 
 import (
 	"fmt"
@@ -10,67 +10,67 @@ import (
 	"KeyValor/internal/utils/fileutils"
 )
 
-func (ls *LshtStorage) persistIndexFile() error {
-	indexFilePath := filepath.Join(ls.cfg.Directory, storagecommon.INDEX_FILENAME)
-	if err := ls.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
+func (hts *HashTableStorage) persistIndexFile() error {
+	indexFilePath := filepath.Join(hts.cfg.Directory, storagecommon.INDEX_FILENAME)
+	if err := hts.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
 		return fmt.Errorf("error encoding index file: %w", err)
 	}
 	return nil
 }
 
-func (ls *LshtStorage) FileRotationLoop(interval time.Duration) {
+func (hts *HashTableStorage) FileRotationLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := ls.maybeRotateActiveFile(); err != nil {
+		if err := hts.maybeRotateActiveFile(); err != nil {
 			return
 		}
 	}
 }
 
-func (ls *LshtStorage) maybeRotateActiveFile() error {
+func (hts *HashTableStorage) maybeRotateActiveFile() error {
 
-	ls.Lock()
-	defer ls.Unlock()
+	hts.Lock()
+	defer hts.Unlock()
 
-	size, err := ls.activeWALFile.Size()
+	size, err := hts.activeWALFile.Size()
 	if err != nil {
 		return err
 	}
 
-	if size < ls.cfg.MaxActiveFileSize {
+	if size < hts.cfg.MaxActiveFileSize {
 		return nil
 	}
 
-	currentFileID := ls.activeWALFile.ID()
-	ls.oldWALFilesMap[currentFileID] = ls.activeWALFile
+	currentFileID := hts.activeWALFile.ID()
+	hts.oldWALFilesMap[currentFileID] = hts.activeWALFile
 
 	// Create a new WAL file.
-	df, err := storagecommon.NewWALFile(ls.cfg.Directory, currentFileID+1)
+	df, err := storagecommon.NewWALFile(hts.cfg.Directory, currentFileID+1)
 	if err != nil {
 		return err
 	}
 
-	ls.activeWALFile = df
+	hts.activeWALFile = df
 	return nil
 }
 
-func (ls *LshtStorage) CompactionLoop(interval time.Duration) {
+func (hts *HashTableStorage) CompactionLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
 	for range ticker.C {
 		func() {
-			ls.Lock()
-			defer ls.Unlock()
+			hts.Lock()
+			defer hts.Unlock()
 
 			// delete the expired keys from the index, and persist the index
-			if err := ls.deleteExpiredKeysFromIndex(); err != nil {
+			if err := hts.deleteExpiredKeysFromIndex(); err != nil {
 				return
 			}
 
 			// merge old files into a new temp file, and keep updating indexes
-			if err := ls.garbageCollectOldFilesDBMuLocked(); err != nil {
+			if err := hts.garbageCollectOldFilesDBMuLocked(); err != nil {
 				return
 			}
 
@@ -78,16 +78,16 @@ func (ls *LshtStorage) CompactionLoop(interval time.Duration) {
 	}
 }
 
-func (ls *LshtStorage) deleteExpiredKeysFromIndex() error {
+func (hts *HashTableStorage) deleteExpiredKeysFromIndex() error {
 
-	ls.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
-		record, err := ls.get(key)
+	hts.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
+		record, err := hts.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %w", key, err)
 		}
 
 		if record.IsExpired() {
-			err := ls.Delete(key)
+			err := hts.Delete(key)
 			if err != nil {
 				return fmt.Errorf("unable to delete expired record: %v", err)
 			}
@@ -98,32 +98,32 @@ func (ls *LshtStorage) deleteExpiredKeysFromIndex() error {
 	return nil
 }
 
-func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
+func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 
-	tempMergedFilePath := filepath.Join(ls.cfg.Directory, storagecommon.MERGED_WAL_FILE_NAME_FORMAT)
+	tempMergedFilePath := filepath.Join(hts.cfg.Directory, storagecommon.MERGED_WAL_FILE_NAME_FORMAT)
 
 	/// move all the live records to a new file
 	// force sync merged WAL file
-	err := ls.mergeWalFiles(tempMergedFilePath)
+	err := hts.mergeWalFiles(tempMergedFilePath)
 	if err != nil {
 		return err
 	}
 
 	// mergeWalFiles updates the indexes as it merges the files
 	// so we need to persist those changes
-	if err := ls.persistIndexFile(); err != nil {
+	if err := hts.persistIndexFile(); err != nil {
 		return err
 	}
 
 	// close all the old WAL files
 	// empty the old files map
 	// delete old WAL files from disk
-	err = ls.cleanupOldFiles()
+	err = hts.cleanupOldFiles()
 	if err != nil {
 		return err
 	}
 
-	newActiveFilePath := filepath.Join(ls.cfg.Directory, fmt.Sprintf(storagecommon.WAL_FILE_NAME_FORMAT, 0))
+	newActiveFilePath := filepath.Join(hts.cfg.Directory, fmt.Sprintf(storagecommon.WAL_FILE_NAME_FORMAT, 0))
 
 	// rename the temporary index file to the active index
 	err = os.Rename(tempMergedFilePath, newActiveFilePath)
@@ -133,27 +133,27 @@ func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
 
 	// sync storage diretory to persist all the above changes
 	// (especially file deletion and rename operations)
-	err = fileutils.SyncFile(ls.cfg.Directory)
+	err = fileutils.SyncFile(hts.cfg.Directory)
 	if err != nil {
 		return fmt.Errorf("error syncing directory: %w", err)
 	}
 
-	ls.activeWALFile, err = storagecommon.NewWALFileWithPath(newActiveFilePath, 0)
+	hts.activeWALFile, err = storagecommon.NewWALFileWithPath(newActiveFilePath, 0)
 	if err != nil {
 		return fmt.Errorf("error creating new active file handler: %w", err)
 	}
 	return nil
 }
 
-func (ls *LshtStorage) cleanupOldFiles() error {
-	for _, walFile := range ls.oldWALFilesMap {
+func (hts *HashTableStorage) cleanupOldFiles() error {
+	for _, walFile := range hts.oldWALFilesMap {
 		if err := walFile.Close(); err != nil {
 			fmt.Printf("error closing wal file: %v", err)
 			continue
 		}
 	}
 
-	ls.oldWALFilesMap = make(map[int]*storagecommon.WriteAheadLogFile)
+	hts.oldWALFilesMap = make(map[int]*storagecommon.WriteAheadLogFile)
 
 	deleteExistingDBFiles := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -176,33 +176,33 @@ func (ls *LshtStorage) cleanupOldFiles() error {
 		return nil
 	}
 
-	err := filepath.Walk(ls.cfg.Directory, deleteExistingDBFiles)
+	err := filepath.Walk(hts.cfg.Directory, deleteExistingDBFiles)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (ls *LshtStorage) mergeWalFiles(tempMergedFilePath string) error {
+func (hts *HashTableStorage) mergeWalFiles(tempMergedFilePath string) error {
 	mergeWalfile, err := storagecommon.NewWALFileWithPath(tempMergedFilePath, 0)
 	if err != nil {
 		return err
 	}
 
-	ls.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
-		record, err := ls.get(key)
+	hts.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
+		record, err := hts.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %v", key, err)
 		}
 
 		expiryTimeUnixNano := record.Header.GetExpiry()
 		if expiryTimeUnixNano == 0 {
-			ls.set(mergeWalfile, key, record.Value, nil)
+			hts.set(mergeWalfile, key, record.Value, nil)
 			return nil
 		}
 
 		var expiryTime = time.Unix(0, expiryTimeUnixNano)
-		return ls.set(mergeWalfile, key, record.Value, &expiryTime)
+		return hts.set(mergeWalfile, key, record.Value, &expiryTime)
 	})
 
 	err = mergeWalfile.Sync()

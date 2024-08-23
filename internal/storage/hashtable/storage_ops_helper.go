@@ -1,4 +1,4 @@
-package hashtablestorage
+package hashtable
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"KeyValor/internal/storage/storagecommon"
 )
 
-func (ls *LshtStorage) getAndValidateMuLocked(key string) ([]byte, error) {
-	record, err := ls.get(key)
+func (hts *HashTableStorage) getAndValidateMuLocked(key string) ([]byte, error) {
+	record, err := hts.get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -26,13 +26,13 @@ func (ls *LshtStorage) getAndValidateMuLocked(key string) ([]byte, error) {
 	return record.Value, nil
 }
 
-func (ls *LshtStorage) get(key string) (storagecommon.Record, error) {
-	meta, err := ls.keyLocationIndex.Get(key)
+func (hts *HashTableStorage) get(key string) (storagecommon.Record, error) {
+	meta, err := hts.keyLocationIndex.Get(key)
 	if err != nil {
 		return storagecommon.Record{}, err
 	}
 
-	file, err := ls.getAppropriateFile(meta)
+	file, err := hts.getAppropriateFile(meta)
 	if err != nil {
 		return storagecommon.Record{}, err
 	}
@@ -60,11 +60,11 @@ func (ls *LshtStorage) get(key string) (storagecommon.Record, error) {
 	return record, nil
 }
 
-func (ls *LshtStorage) getAppropriateFile(meta storagecommon.Meta) (*storagecommon.WriteAheadLogFile, error) {
-	if meta.FileID == ls.activeWALFile.ID() {
-		return ls.activeWALFile, nil
+func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*storagecommon.WriteAheadLogFile, error) {
+	if meta.FileID == hts.activeWALFile.ID() {
+		return hts.activeWALFile, nil
 	}
-	file, ok := ls.oldWALFilesMap[meta.FileID]
+	file, ok := hts.oldWALFilesMap[meta.FileID]
 	if !ok {
 		return nil, constants.ErrWalFileNotFound
 	}
@@ -72,7 +72,7 @@ func (ls *LshtStorage) getAppropriateFile(meta storagecommon.Meta) (*storagecomm
 	return file, nil
 }
 
-func (ls *LshtStorage) set(
+func (hts *HashTableStorage) set(
 	file *storagecommon.WriteAheadLogFile,
 	key string,
 	value []byte,
@@ -90,10 +90,10 @@ func (ls *LshtStorage) set(
 		Value:  value,
 	}
 
-	buf := ls.bufferPool.Get().(*bytes.Buffer)
+	buf := hts.bufferPool.Get().(*bytes.Buffer)
 
 	// return the buffer to the pool
-	defer ls.bufferPool.Put(buf)
+	defer hts.bufferPool.Put(buf)
 
 	// reset the buffer before returning
 	defer buf.Reset()
@@ -108,7 +108,7 @@ func (ls *LshtStorage) set(
 		return err
 	}
 
-	ls.keyLocationIndex.Put(key, storagecommon.Meta{
+	hts.keyLocationIndex.Put(key, storagecommon.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
 		RecordOffset: file.GetCurrentOffset(),

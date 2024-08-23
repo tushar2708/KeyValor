@@ -1,4 +1,4 @@
-package hashtablestorage
+package hashtable
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"KeyValor/internal/utils/fileutils"
 )
 
-type LshtStorage struct {
+type HashTableStorage struct {
 	sync.RWMutex
 	cfg              *config.DBCfgOpts
 	bufferPool       sync.Pool // crate an object pool to reuse buffers
@@ -23,7 +23,7 @@ type LshtStorage struct {
 	lockFile         *os.File
 }
 
-func NewLshtStorage(cfg *config.DBCfgOpts) (*LshtStorage, error) {
+func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 
 	var (
 		lockFile    *os.File
@@ -66,7 +66,7 @@ func NewLshtStorage(cfg *config.DBCfgOpts) (*LshtStorage, error) {
 		}
 	}
 
-	return &LshtStorage{
+	return &HashTableStorage{
 		cfg: cfg,
 		bufferPool: sync.Pool{
 			New: func() interface{} {
@@ -80,36 +80,36 @@ func NewLshtStorage(cfg *config.DBCfgOpts) (*LshtStorage, error) {
 	}, nil
 }
 
-func (ls *LshtStorage) Init() error {
+func (hts *HashTableStorage) Init() error {
 	// run periodic compaction
-	go ls.CompactionLoop(ls.cfg.CompactInterval)
+	go hts.CompactionLoop(hts.cfg.CompactInterval)
 
 	// run periodic sync
-	go ls.FileRotationLoop(ls.cfg.CheckFileSizeInterval)
+	go hts.FileRotationLoop(hts.cfg.CheckFileSizeInterval)
 
 	return nil
 }
 
-func (ls *LshtStorage) Close() error {
+func (hts *HashTableStorage) Close() error {
 	// persist the index to the disk
-	if err := ls.persistIndexFile(); err != nil {
+	if err := hts.persistIndexFile(); err != nil {
 		return fmt.Errorf("error persisting index file: %w", err)
 	}
 
 	// close the active file
-	if err := ls.activeWALFile.Close(); err != nil {
+	if err := hts.activeWALFile.Close(); err != nil {
 		return fmt.Errorf("error closing active WAL file: %w", err)
 	}
 
 	// close old files
-	for _, file := range ls.oldWALFilesMap {
+	for _, file := range hts.oldWALFilesMap {
 		if err := file.Close(); err != nil {
 			return fmt.Errorf("error closing old WAL file: %w", err)
 		}
 	}
 
 	// free the lock file
-	if err := storagecommon.FreeLockFile(ls.lockFile); err != nil {
+	if err := storagecommon.FreeLockFile(hts.lockFile); err != nil {
 		return fmt.Errorf("error freeing lock file: %w", err)
 	}
 	return nil

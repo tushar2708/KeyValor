@@ -1,4 +1,4 @@
-package hashtablestorage
+package hashtable
 
 import (
 	"encoding/gob"
@@ -9,32 +9,32 @@ import (
 	"KeyValor/internal/storage/storagecommon"
 )
 
-// LogStructuredHashTableIndex implements a Log structured HashMap's index
-type LogStructuredHashTableIndex struct {
+// HashTableIndex implements a Log structured HashMap's index
+type HashTableIndex struct {
 	hashMap map[string]storagecommon.Meta
 }
 
-func NewLogStructuredHashTableIndex() *LogStructuredHashTableIndex {
-	return &LogStructuredHashTableIndex{
+func NewLogStructuredHashTableIndex() *HashTableIndex {
+	return &HashTableIndex{
 		hashMap: make(map[string]storagecommon.Meta),
 	}
 }
 
-func (lski *LogStructuredHashTableIndex) Get(key string) (storagecommon.Meta, error) {
-	val, ok := lski.hashMap[key]
+func (hti *HashTableIndex) Get(key string) (storagecommon.Meta, error) {
+	val, ok := hti.hashMap[key]
 	if !ok {
 		return storagecommon.Meta{}, constants.ErrKeyMissing
 	}
 	return val, nil
 }
 
-func (lski *LogStructuredHashTableIndex) Put(key string, metaData storagecommon.Meta) error {
-	lski.hashMap[key] = metaData
+func (hti *HashTableIndex) Put(key string, metaData storagecommon.Meta) error {
+	hti.hashMap[key] = metaData
 	return nil
 }
 
-func (lski *LogStructuredHashTableIndex) Delete(key string) error {
-	delete(lski.hashMap, key)
+func (hti *HashTableIndex) Delete(key string) error {
+	delete(hti.hashMap, key)
 	return nil
 }
 
@@ -46,7 +46,7 @@ func (lski *LogStructuredHashTableIndex) Delete(key string) error {
 // Returns:
 // - An error if the file cannot be opened, or if there is an error decoding the file contents.
 // - nil if the LogStructuredKeyIndex is successfully loaded from the file.
-func (lsi *LogStructuredHashTableIndex) LoadFromFile(filePath string) error {
+func (lsi *HashTableIndex) LoadFromFile(filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (lsi *LogStructuredHashTableIndex) LoadFromFile(filePath string) error {
 // Returns:
 // - An error if the file cannot be created, or if there is an error encoding the LogStructuredKeyIndex into the file.
 // - nil if the LogStructuredKeyIndex is successfully serialized and saved to the file.
-func (lsi *LogStructuredHashTableIndex) DumpToFile(filePath string) error {
+func (lsi *HashTableIndex) DumpToFile(filePath string) error {
 	file, err := os.Create(filePath)
 
 	if err != nil {
@@ -77,7 +77,7 @@ func (lsi *LogStructuredHashTableIndex) DumpToFile(filePath string) error {
 	return encoder.Encode(lsi.hashMap)
 }
 
-func (lsi *LogStructuredHashTableIndex) Map(f func(key string, metaData storagecommon.Meta) error) {
+func (lsi *HashTableIndex) Map(f func(key string, metaData storagecommon.Meta) error) {
 	for key, value := range lsi.hashMap {
 		if err := f(key, value); err != nil {
 			fmt.Printf("error in Map, err: %v", err)
