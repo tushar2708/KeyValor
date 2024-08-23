@@ -1,17 +1,10 @@
 package KeyValor
 
 import (
-	"KeyValor/internal/index"
-	"KeyValor/internal/timeutils"
-	"fmt"
-	"regexp"
 	"time"
-)
 
-type Value struct {
-	Val []byte
-	Err error
-}
+	"KeyValor/dbops"
+)
 
 // Get retrieves the value associated with the given key from the key-value store.
 // It acquires a read lock on the database to ensure thread safety.
@@ -28,7 +21,7 @@ func (db *KeyValorDatabase) Get(key string) ([]byte, error) {
 	db.RLock()
 	defer db.RUnlock()
 
-	return db.getAndValidateMuLocked(key)
+	return db.storage.Get(key)
 }
 
 // MGet retrieves the values associated with the given keys from the key-value store.
@@ -43,27 +36,11 @@ func (db *KeyValorDatabase) Get(key string) ([]byte, error) {
 //     If the value is successfully retrieved, both the value and error will be nil.
 //
 // Note: This function does not perform any validation on the keys or values.
-func (db *KeyValorDatabase) MGet(keys []string) ([]Value, error) {
+func (db *KeyValorDatabase) MGet(keys []string) ([]dbops.Value, error) {
 	db.Lock()
 	defer db.Unlock()
 
-	values := make([]Value, len(keys))
-
-	for i, key := range keys {
-		if val, err := db.getAndValidateMuLocked(key); err != nil {
-			values[i] = Value{
-				Val: nil,
-				Err: err,
-			}
-		} else {
-			values[i] = Value{
-				Val: val,
-				Err: nil,
-			}
-		}
-
-	}
-	return values, nil
+	return db.storage.MGet(keys)
 }
 
 // Exists checks if a key exists in the key-value store.
@@ -78,8 +55,8 @@ func (db *KeyValorDatabase) MGet(keys []string) ([]Value, error) {
 func (db *KeyValorDatabase) Exists(key string) bool {
 	db.RLock()
 	defer db.RUnlock()
-	_, err := db.keyLocationIndex.Get(key)
-	return err == nil
+
+	return db.storage.Exists(key)
 }
 
 // Set inserts or updates a key-value pair in the key-value store.
@@ -96,11 +73,7 @@ func (db *KeyValorDatabase) Set(key string, value []byte) error {
 	db.Lock()
 	defer db.Unlock()
 
-	if err := validateEntry(key, value); err != nil {
-		return fmt.Errorf("invalid key or value")
-	}
-
-	return db.set(db.activeWALFile, key, value, nil)
+	return db.storage.Set(key, value)
 }
 
 // Delete removes a key-value pair from the key-value store.
@@ -116,65 +89,28 @@ func (db *KeyValorDatabase) Delete(key string) error {
 	db.Lock()
 	defer db.Unlock()
 
-	// write a tombstone to the database
-	if err := db.set(db.activeWALFile, key, []byte{}, nil); err != nil {
-		return err
-	}
-
-	// delete the value from in-memory index
-	db.keyLocationIndex.Delete(key)
-	return nil
+	return db.storage.Delete(key)
 }
 
-func (db *KeyValorDatabase) AllKeys(key string) ([]string, error) {
+func (db *KeyValorDatabase) AllKeys() ([]string, error) {
 	db.RLock()
 	defer db.RUnlock()
 
-	return keysMatchingRegex(db.keyLocationIndex, "*")
+	return db.storage.AllKeys()
 }
 
 func (db *KeyValorDatabase) Keys(regex string) ([]string, error) {
 	db.RLock()
 	defer db.RUnlock()
 
-	return keysMatchingRegex(db.keyLocationIndex, regex)
-}
-
-func keysMatchingRegex(dbIndex index.DatabaseIndex, pattern string) ([]string, error) {
-	// Compile the regex pattern
-	var re *regexp.Regexp
-	var err error
-	if pattern != "*" {
-		re, err = regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("invalid regex pattern: %w", err)
-		}
-	}
-
-	var matchingKeys []string
-
-	// Iterate over the map and add matching keys to the slice
-	dbIndex.Map(func(key string, metaData index.Meta) error {
-		if pattern == "*" || re.MatchString(key) {
-			matchingKeys = append(matchingKeys, key)
-		}
-		return nil
-	})
-
-	return matchingKeys, nil
+	return db.storage.Keys(regex)
 }
 
 func (db *KeyValorDatabase) Expire(key string, expireTime *time.Time) error {
 	db.Lock()
 	defer db.Unlock()
 
-	record, err := db.get(key)
-	if err != nil {
-		return err
-	}
-
-	record.Header.SetExpiry(expireTime.UnixNano())
-	return db.set(db.activeWALFile, key, record.Value, expireTime)
+	return db.storage.Expire(key, expireTime)
 }
 
 // Redis-compatible INCR command
@@ -182,18 +118,7 @@ func (db *KeyValorDatabase) Incr(key string) error {
 	db.Lock()
 	defer db.Unlock()
 
-	value, err := db.getAndValidateMuLocked(key)
-	if err != nil {
-		return err
-	}
-
-	intValue, err := bytesToInt(value)
-	if err != nil {
-		return err
-	}
-
-	intValue++
-	return db.Set(key, intToBytes(intValue))
+	return db.storage.Incr(key)
 }
 
 // Redis-compatible DECR command
@@ -201,18 +126,7 @@ func (db *KeyValorDatabase) Decr(key string) error {
 	db.Lock()
 	defer db.Unlock()
 
-	value, err := db.getAndValidateMuLocked(key)
-	if err != nil {
-		return err
-	}
-
-	intValue, err := bytesToInt(value)
-	if err != nil {
-		return err
-	}
-
-	intValue--
-	return db.Set(key, intToBytes(intValue))
+	return db.storage.Decr(key)
 }
 
 // Redis-compatible TTL command
@@ -220,21 +134,7 @@ func (db *KeyValorDatabase) TTL(key string) (int64, error) {
 	db.RLock()
 	defer db.RUnlock()
 
-	record, err := db.get(key)
-	if err != nil {
-		return -1, err
-	}
-
-	if record.Header.GetExpiry() == 0 {
-		return -1, nil
-	}
-
-	ttl := record.Header.GetExpiry() - timeutils.CurrentTimeNanos()
-	if ttl <= 0 {
-		return -1, nil
-	}
-
-	return ttl / int64(time.Second), nil
+	return db.storage.TTL(key)
 }
 
 // Redis-compatible SETEX command
@@ -242,8 +142,7 @@ func (db *KeyValorDatabase) SetEx(key string, value []byte, ttlSeconds int64) er
 	db.Lock()
 	defer db.Unlock()
 
-	expireTime := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-	return db.set(db.activeWALFile, key, value, &expireTime)
+	return db.storage.SetEx(key, value, ttlSeconds)
 }
 
 // Redis-compatible PERSIST command
@@ -251,11 +150,5 @@ func (db *KeyValorDatabase) Persist(key string) error {
 	db.Lock()
 	defer db.Unlock()
 
-	record, err := db.get(key)
-	if err != nil {
-		return err
-	}
-
-	record.Header.SetExpiry(0)
-	return db.set(db.activeWALFile, key, record.Value, nil)
+	return db.storage.Persist(key)
 }

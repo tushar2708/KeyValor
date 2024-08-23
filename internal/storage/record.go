@@ -6,7 +6,7 @@ import (
 	"hash/crc32"
 	"time"
 
-	"KeyValor/internal/timeutils"
+	"KeyValor/internal/utils/timeutils"
 )
 
 type Record struct {

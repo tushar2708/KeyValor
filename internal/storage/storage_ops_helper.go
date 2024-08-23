@@ -1,4 +1,4 @@
-package KeyValor
+package storage
 
 import (
 	"bytes"
@@ -7,11 +7,10 @@ import (
 
 	"KeyValor/constants"
 	"KeyValor/internal/index"
-	"KeyValor/internal/storage"
 )
 
-func (db *KeyValorDatabase) getAndValidateMuLocked(key string) ([]byte, error) {
-	record, err := db.get(key)
+func (ls *LshtStorage) getAndValidateMuLocked(key string) ([]byte, error) {
+	record, err := ls.get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -27,25 +26,25 @@ func (db *KeyValorDatabase) getAndValidateMuLocked(key string) ([]byte, error) {
 	return record.Value, nil
 }
 
-func (db *KeyValorDatabase) get(key string) (storage.Record, error) {
-	meta, err := db.keyLocationIndex.Get(key)
+func (ls *LshtStorage) get(key string) (Record, error) {
+	meta, err := ls.keyLocationIndex.Get(key)
 	if err != nil {
-		return storage.Record{}, err
+		return Record{}, err
 	}
 
-	file, err := db.getAppropriateFile(meta)
+	file, err := ls.getAppropriateFile(meta)
 	if err != nil {
-		return storage.Record{}, err
+		return Record{}, err
 	}
 
 	data, err := file.Read(meta.RecordOffset, meta.RecordSize)
 	if err != nil {
-		return storage.Record{}, err
+		return Record{}, err
 	}
 
-	var header storage.Header
+	var header Header
 	if err := header.Decode(data); err != nil {
-		return storage.Record{}, fmt.Errorf("error decoding record header: %w", err)
+		return Record{}, fmt.Errorf("error decoding record header: %w", err)
 	}
 
 	// structure of record :
@@ -53,7 +52,7 @@ func (db *KeyValorDatabase) get(key string) (storage.Record, error) {
 	valueOffset := meta.RecordSize - int(header.GetValueSize())
 	value := data[valueOffset:]
 
-	record := storage.Record{
+	record := Record{
 		Header: header,
 		Key:    key,
 		Value:  value,
@@ -61,11 +60,11 @@ func (db *KeyValorDatabase) get(key string) (storage.Record, error) {
 	return record, nil
 }
 
-func (db *KeyValorDatabase) getAppropriateFile(meta index.Meta) (*storage.WriteAheadLogFile, error) {
-	if meta.FileID == db.activeWALFile.ID() {
-		return db.activeWALFile, nil
+func (ls *LshtStorage) getAppropriateFile(meta index.Meta) (*WriteAheadLogFile, error) {
+	if meta.FileID == ls.activeWALFile.ID() {
+		return ls.activeWALFile, nil
 	}
-	file, ok := db.oldWALFilesMap[meta.FileID]
+	file, ok := ls.oldWALFilesMap[meta.FileID]
 	if !ok {
 		return nil, constants.ErrWalFileNotFound
 	}
@@ -73,28 +72,28 @@ func (db *KeyValorDatabase) getAppropriateFile(meta index.Meta) (*storage.WriteA
 	return file, nil
 }
 
-func (db *KeyValorDatabase) set(
-	file *storage.WriteAheadLogFile,
+func (ls *LshtStorage) set(
+	file *WriteAheadLogFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
 ) error {
-	header := storage.NewHeader(key, value)
+	header := NewHeader(key, value)
 
 	if expiryTime != nil {
 		header.SetExpiry(expiryTime.UnixNano())
 	}
 
-	record := storage.Record{
+	record := Record{
 		Header: header,
 		Key:    key,
 		Value:  value,
 	}
 
-	buf := db.bufferPool.Get().(*bytes.Buffer)
+	buf := ls.bufferPool.Get().(*bytes.Buffer)
 
 	// return the buffer to the pool
-	defer db.bufferPool.Put(buf)
+	defer ls.bufferPool.Put(buf)
 
 	// reset the buffer before returning
 	defer buf.Reset()
@@ -109,11 +108,31 @@ func (db *KeyValorDatabase) set(
 		return err
 	}
 
-	db.keyLocationIndex.Put(key, index.Meta{
+	ls.keyLocationIndex.Put(key, index.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
 		RecordOffset: file.GetCurrentOffset(),
 		RecordSize:   len(buf.Bytes()),
 	})
+	return nil
+}
+
+func validateEntry(k string, val []byte) error {
+	if len(k) == 0 {
+		return constants.ErrKeyIsEmpty
+	}
+
+	if len(k) > constants.MaxKeySize {
+		return constants.ErrKeyTooBig
+	}
+
+	if len(val) == 0 {
+		return constants.ErrValueIsEmpty
+	}
+
+	if len(val) > constants.MaxValueSize {
+		return constants.ErrValueTooBig
+	}
+
 	return nil
 }

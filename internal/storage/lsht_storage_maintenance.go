@@ -1,4 +1,4 @@
-package KeyValor
+package storage
 
 import (
 	"fmt"
@@ -7,71 +7,70 @@ import (
 	"time"
 
 	"KeyValor/internal/index"
-	"KeyValor/internal/storage"
 	"KeyValor/internal/utils/fileutils"
 )
 
-func (db *KeyValorDatabase) persistIndexFile() error {
-	indexFilePath := filepath.Join(db.cfg.directory, storage.INDEX_FILENAME)
-	if err := db.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
+func (ls *LshtStorage) persistIndexFile() error {
+	indexFilePath := filepath.Join(ls.cfg.Directory, INDEX_FILENAME)
+	if err := ls.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
 		return fmt.Errorf("error encoding index file: %w", err)
 	}
 	return nil
 }
 
-func (db *KeyValorDatabase) FileRotationLoop(interval time.Duration) {
+func (ls *LshtStorage) FileRotationLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := db.maybeRotateActiveFile(); err != nil {
+		if err := ls.maybeRotateActiveFile(); err != nil {
 			return
 		}
 	}
 }
 
-func (db *KeyValorDatabase) maybeRotateActiveFile() error {
+func (ls *LshtStorage) maybeRotateActiveFile() error {
 
-	db.Lock()
-	defer db.Unlock()
+	ls.Lock()
+	defer ls.Unlock()
 
-	size, err := db.activeWALFile.Size()
+	size, err := ls.activeWALFile.Size()
 	if err != nil {
 		return err
 	}
 
-	if size < db.cfg.maxActiveFileSize {
+	if size < ls.cfg.MaxActiveFileSize {
 		return nil
 	}
 
-	currentFileID := db.activeWALFile.ID()
-	db.oldWALFilesMap[currentFileID] = db.activeWALFile
+	currentFileID := ls.activeWALFile.ID()
+	ls.oldWALFilesMap[currentFileID] = ls.activeWALFile
 
 	// Create a new WAL file.
-	df, err := storage.NewWALFile(db.cfg.directory, currentFileID+1)
+	df, err := NewWALFile(ls.cfg.Directory, currentFileID+1)
 	if err != nil {
 		return err
 	}
 
-	db.activeWALFile = df
+	ls.activeWALFile = df
 	return nil
 }
 
-func (db *KeyValorDatabase) CompactionLoop(interval time.Duration) {
+func (ls *LshtStorage) CompactionLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
 	for range ticker.C {
 		func() {
-			db.Lock()
-			defer db.Unlock()
+			ls.Lock()
+			defer ls.Unlock()
 
 			// delete the expired keys from the index, and persist the index
-			if err := db.deleteExpiredKeysFromIndex(); err != nil {
+			if err := ls.deleteExpiredKeysFromIndex(); err != nil {
 				return
 			}
 
 			// merge old files into a new temp file, and keep updating indexes
-			if err := db.garbageCollectOldFilesDBMuLocked(); err != nil {
+			if err := ls.garbageCollectOldFilesDBMuLocked(); err != nil {
 				return
 			}
 
@@ -79,16 +78,16 @@ func (db *KeyValorDatabase) CompactionLoop(interval time.Duration) {
 	}
 }
 
-func (db *KeyValorDatabase) deleteExpiredKeysFromIndex() error {
+func (ls *LshtStorage) deleteExpiredKeysFromIndex() error {
 
-	db.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
-		record, err := db.get(key)
+	ls.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
+		record, err := ls.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %w", key, err)
 		}
 
 		if record.IsExpired() {
-			err := db.Delete(key)
+			err := ls.Delete(key)
 			if err != nil {
 				return fmt.Errorf("unable to delete expired record: %v", err)
 			}
@@ -99,32 +98,32 @@ func (db *KeyValorDatabase) deleteExpiredKeysFromIndex() error {
 	return nil
 }
 
-func (db *KeyValorDatabase) garbageCollectOldFilesDBMuLocked() error {
+func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
 
-	tempMergedFilePath := filepath.Join(db.cfg.directory, storage.MERGED_WAL_FILE_NAME_FORMAT)
+	tempMergedFilePath := filepath.Join(ls.cfg.Directory, MERGED_WAL_FILE_NAME_FORMAT)
 
 	/// move all the live records to a new file
 	// force sync merged WAL file
-	err := db.mergeWalFiles(tempMergedFilePath)
+	err := ls.mergeWalFiles(tempMergedFilePath)
 	if err != nil {
 		return err
 	}
 
 	// mergeWalFiles updates the indexes as it merges the files
 	// so we need to persist those changes
-	if err := db.persistIndexFile(); err != nil {
+	if err := ls.persistIndexFile(); err != nil {
 		return err
 	}
 
 	// close all the old WAL files
 	// empty the old files map
 	// delete old WAL files from disk
-	err = db.cleanupOldFiles()
+	err = ls.cleanupOldFiles()
 	if err != nil {
 		return err
 	}
 
-	newActiveFilePath := filepath.Join(db.cfg.directory, fmt.Sprintf(storage.WAL_FILE_NAME_FORMAT, 0))
+	newActiveFilePath := filepath.Join(ls.cfg.Directory, fmt.Sprintf(WAL_FILE_NAME_FORMAT, 0))
 
 	// rename the temporary index file to the active index
 	err = os.Rename(tempMergedFilePath, newActiveFilePath)
@@ -134,27 +133,27 @@ func (db *KeyValorDatabase) garbageCollectOldFilesDBMuLocked() error {
 
 	// sync storage diretory to persist all the above changes
 	// (especially file deletion and rename operations)
-	err = fileutils.SyncFile(db.cfg.directory)
+	err = fileutils.SyncFile(ls.cfg.Directory)
 	if err != nil {
 		return fmt.Errorf("error syncing directory: %w", err)
 	}
 
-	db.activeWALFile, err = storage.NewWALFileWithPath(newActiveFilePath, 0)
+	ls.activeWALFile, err = NewWALFileWithPath(newActiveFilePath, 0)
 	if err != nil {
 		return fmt.Errorf("error creating new active file handler: %w", err)
 	}
 	return nil
 }
 
-func (db *KeyValorDatabase) cleanupOldFiles() error {
-	for _, walFile := range db.oldWALFilesMap {
+func (ls *LshtStorage) cleanupOldFiles() error {
+	for _, walFile := range ls.oldWALFilesMap {
 		if err := walFile.Close(); err != nil {
 			fmt.Printf("error closing wal file: %v", err)
 			continue
 		}
 	}
 
-	db.oldWALFilesMap = make(map[int]*storage.WriteAheadLogFile)
+	ls.oldWALFilesMap = make(map[int]*WriteAheadLogFile)
 
 	deleteExistingDBFiles := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -163,11 +162,11 @@ func (db *KeyValorDatabase) cleanupOldFiles() error {
 		if info.IsDir() {
 			return nil
 		}
-		if filepath.Base(path) == storage.LOCKFILE {
+		if filepath.Base(path) == LOCKFILE {
 			return nil
 		}
 
-		if filepath.Ext(path) == storage.WAL_FILE_EXTENSION {
+		if filepath.Ext(path) == WAL_FILE_EXTENSION {
 			err = os.Remove(path)
 			if err != nil {
 				return err
@@ -177,33 +176,33 @@ func (db *KeyValorDatabase) cleanupOldFiles() error {
 		return nil
 	}
 
-	err := filepath.Walk(db.cfg.directory, deleteExistingDBFiles)
+	err := filepath.Walk(ls.cfg.Directory, deleteExistingDBFiles)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (db *KeyValorDatabase) mergeWalFiles(tempMergedFilePath string) error {
-	mergeWalfile, err := storage.NewWALFileWithPath(tempMergedFilePath, 0)
+func (ls *LshtStorage) mergeWalFiles(tempMergedFilePath string) error {
+	mergeWalfile, err := NewWALFileWithPath(tempMergedFilePath, 0)
 	if err != nil {
 		return err
 	}
 
-	db.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
-		record, err := db.get(key)
+	ls.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
+		record, err := ls.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %v", key, err)
 		}
 
 		expiryTimeUnixNano := record.Header.GetExpiry()
 		if expiryTimeUnixNano == 0 {
-			db.set(mergeWalfile, key, record.Value, nil)
+			ls.set(mergeWalfile, key, record.Value, nil)
 			return nil
 		}
 
 		var expiryTime = time.Unix(0, expiryTimeUnixNano)
-		return db.set(mergeWalfile, key, record.Value, &expiryTime)
+		return ls.set(mergeWalfile, key, record.Value, &expiryTime)
 	})
 
 	err = mergeWalfile.Sync()

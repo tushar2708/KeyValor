@@ -13,3 +13,10 @@ func SyncFile(path string) error {
 	}
 	return f.Close()
 }
+
+func FileExists(filePath string) bool {
+	if _, err := os.Stat(filePath); err != nil {
+		return false
+	}
+	return true
+}
