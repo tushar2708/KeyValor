@@ -1,4 +1,4 @@
-package storage
+package hashtablestorage
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"KeyValor/dbops"
-	"KeyValor/internal/index"
+	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/utils/dataconvutils"
 	"KeyValor/internal/utils/timeutils"
 )
@@ -138,7 +138,7 @@ func (ls *LshtStorage) Keys(regex string) ([]string, error) {
 	return keysMatchingRegex(ls.keyLocationIndex, regex)
 }
 
-func keysMatchingRegex(dbIndex index.DatabaseIndex, pattern string) ([]string, error) {
+func keysMatchingRegex(dbIndex storagecommon.DatabaseIndex, pattern string) ([]string, error) {
 	// Compile the regex pattern
 	var re *regexp.Regexp
 	var err error
@@ -152,7 +152,7 @@ func keysMatchingRegex(dbIndex index.DatabaseIndex, pattern string) ([]string, e
 	var matchingKeys []string
 
 	// Iterate over the map and add matching keys to the slice
-	dbIndex.Map(func(key string, metaData index.Meta) error {
+	dbIndex.Map(func(key string, metaData storagecommon.Meta) error {
 		if pattern == "*" || re.MatchString(key) {
 			matchingKeys = append(matchingKeys, key)
 		}

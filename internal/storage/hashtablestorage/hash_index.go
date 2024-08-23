@@ -1,4 +1,4 @@
-package index
+package hashtablestorage
 
 import (
 	"encoding/gob"
@@ -6,37 +6,29 @@ import (
 	"os"
 
 	"KeyValor/constants"
+	"KeyValor/internal/storage/storagecommon"
 )
 
 // LogStructuredHashTableIndex implements a Log structured HashMap's index
 type LogStructuredHashTableIndex struct {
-	hashMap map[string]Meta
+	hashMap map[string]storagecommon.Meta
 }
 
 func NewLogStructuredHashTableIndex() *LogStructuredHashTableIndex {
 	return &LogStructuredHashTableIndex{
-		hashMap: make(map[string]Meta),
+		hashMap: make(map[string]storagecommon.Meta),
 	}
 }
 
-type Meta struct {
-	Timestamp int64
-
-	// path to record
-	FileID       int
-	RecordOffset int
-	RecordSize   int
-}
-
-func (lski *LogStructuredHashTableIndex) Get(key string) (Meta, error) {
+func (lski *LogStructuredHashTableIndex) Get(key string) (storagecommon.Meta, error) {
 	val, ok := lski.hashMap[key]
 	if !ok {
-		return Meta{}, constants.ErrKeyMissing
+		return storagecommon.Meta{}, constants.ErrKeyMissing
 	}
 	return val, nil
 }
 
-func (lski *LogStructuredHashTableIndex) Put(key string, metaData Meta) error {
+func (lski *LogStructuredHashTableIndex) Put(key string, metaData storagecommon.Meta) error {
 	lski.hashMap[key] = metaData
 	return nil
 }
@@ -85,7 +77,7 @@ func (lsi *LogStructuredHashTableIndex) DumpToFile(filePath string) error {
 	return encoder.Encode(lsi.hashMap)
 }
 
-func (lsi *LogStructuredHashTableIndex) Map(f func(key string, metaData Meta) error) {
+func (lsi *LogStructuredHashTableIndex) Map(f func(key string, metaData storagecommon.Meta) error) {
 	for key, value := range lsi.hashMap {
 		if err := f(key, value); err != nil {
 			fmt.Printf("error in Map, err: %v", err)

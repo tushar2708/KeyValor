@@ -1,4 +1,4 @@
-package storage
+package hashtablestorage
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"KeyValor/constants"
-	"KeyValor/internal/index"
+	"KeyValor/internal/storage/storagecommon"
 )
 
 func (ls *LshtStorage) getAndValidateMuLocked(key string) ([]byte, error) {
@@ -26,25 +26,25 @@ func (ls *LshtStorage) getAndValidateMuLocked(key string) ([]byte, error) {
 	return record.Value, nil
 }
 
-func (ls *LshtStorage) get(key string) (Record, error) {
+func (ls *LshtStorage) get(key string) (storagecommon.Record, error) {
 	meta, err := ls.keyLocationIndex.Get(key)
 	if err != nil {
-		return Record{}, err
+		return storagecommon.Record{}, err
 	}
 
 	file, err := ls.getAppropriateFile(meta)
 	if err != nil {
-		return Record{}, err
+		return storagecommon.Record{}, err
 	}
 
 	data, err := file.Read(meta.RecordOffset, meta.RecordSize)
 	if err != nil {
-		return Record{}, err
+		return storagecommon.Record{}, err
 	}
 
-	var header Header
+	var header storagecommon.Header
 	if err := header.Decode(data); err != nil {
-		return Record{}, fmt.Errorf("error decoding record header: %w", err)
+		return storagecommon.Record{}, fmt.Errorf("error decoding record header: %w", err)
 	}
 
 	// structure of record :
@@ -52,7 +52,7 @@ func (ls *LshtStorage) get(key string) (Record, error) {
 	valueOffset := meta.RecordSize - int(header.GetValueSize())
 	value := data[valueOffset:]
 
-	record := Record{
+	record := storagecommon.Record{
 		Header: header,
 		Key:    key,
 		Value:  value,
@@ -60,7 +60,7 @@ func (ls *LshtStorage) get(key string) (Record, error) {
 	return record, nil
 }
 
-func (ls *LshtStorage) getAppropriateFile(meta index.Meta) (*WriteAheadLogFile, error) {
+func (ls *LshtStorage) getAppropriateFile(meta storagecommon.Meta) (*storagecommon.WriteAheadLogFile, error) {
 	if meta.FileID == ls.activeWALFile.ID() {
 		return ls.activeWALFile, nil
 	}
@@ -73,18 +73,18 @@ func (ls *LshtStorage) getAppropriateFile(meta index.Meta) (*WriteAheadLogFile, 
 }
 
 func (ls *LshtStorage) set(
-	file *WriteAheadLogFile,
+	file *storagecommon.WriteAheadLogFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
 ) error {
-	header := NewHeader(key, value)
+	header := storagecommon.NewHeader(key, value)
 
 	if expiryTime != nil {
 		header.SetExpiry(expiryTime.UnixNano())
 	}
 
-	record := Record{
+	record := storagecommon.Record{
 		Header: header,
 		Key:    key,
 		Value:  value,
@@ -108,7 +108,7 @@ func (ls *LshtStorage) set(
 		return err
 	}
 
-	ls.keyLocationIndex.Put(key, index.Meta{
+	ls.keyLocationIndex.Put(key, storagecommon.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
 		RecordOffset: file.GetCurrentOffset(),

@@ -6,6 +6,7 @@ import (
 
 	"KeyValor/config"
 	"KeyValor/internal/storage"
+	"KeyValor/internal/storage/hashtablestorage"
 )
 
 type KeyValorDatabase struct {
@@ -21,7 +22,7 @@ func NewKeyValorDB(options ...Option) (*KeyValorDatabase, error) {
 		option(opts)
 	}
 
-	storage, err := storage.NewLshtStorage(opts)
+	storage, err := hashtablestorage.NewLshtStorage(opts)
 	if err != nil {
 		return nil, err
 	}

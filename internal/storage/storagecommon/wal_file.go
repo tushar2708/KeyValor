@@ -1,4 +1,4 @@
-package storage
+package storagecommon
 
 import (
 	"fmt"
@@ -18,15 +18,6 @@ type WriteAheadLogFile struct {
 	id     int
 	offset int
 }
-
-const (
-	STORAGE_FILENAME_PREFIX     = "wal_file_"
-	WAL_FILE_NAME_FORMAT        = "wal_file_%d.db"
-	MERGED_WAL_FILE_NAME_FORMAT = "wal_file.merged.wip"
-	WAL_FILE_EXTENSION          = ".db"
-	LOCKFILE                    = "store.lock"
-	INDEX_FILENAME              = "index"
-)
 
 func ListWALFiles(directory string) (files []string, ids []int, err error) {
 	files, err = filepath.Glob(fmt.Sprintf("%s/.db", directory))

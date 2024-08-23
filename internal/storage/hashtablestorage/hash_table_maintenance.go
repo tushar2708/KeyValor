@@ -1,4 +1,4 @@
-package storage
+package hashtablestorage
 
 import (
 	"fmt"
@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"KeyValor/internal/index"
+	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/utils/fileutils"
 )
 
 func (ls *LshtStorage) persistIndexFile() error {
-	indexFilePath := filepath.Join(ls.cfg.Directory, INDEX_FILENAME)
+	indexFilePath := filepath.Join(ls.cfg.Directory, storagecommon.INDEX_FILENAME)
 	if err := ls.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
 		return fmt.Errorf("error encoding index file: %w", err)
 	}
@@ -47,7 +47,7 @@ func (ls *LshtStorage) maybeRotateActiveFile() error {
 	ls.oldWALFilesMap[currentFileID] = ls.activeWALFile
 
 	// Create a new WAL file.
-	df, err := NewWALFile(ls.cfg.Directory, currentFileID+1)
+	df, err := storagecommon.NewWALFile(ls.cfg.Directory, currentFileID+1)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (ls *LshtStorage) CompactionLoop(interval time.Duration) {
 
 func (ls *LshtStorage) deleteExpiredKeysFromIndex() error {
 
-	ls.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
+	ls.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
 		record, err := ls.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %w", key, err)
@@ -100,7 +100,7 @@ func (ls *LshtStorage) deleteExpiredKeysFromIndex() error {
 
 func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
 
-	tempMergedFilePath := filepath.Join(ls.cfg.Directory, MERGED_WAL_FILE_NAME_FORMAT)
+	tempMergedFilePath := filepath.Join(ls.cfg.Directory, storagecommon.MERGED_WAL_FILE_NAME_FORMAT)
 
 	/// move all the live records to a new file
 	// force sync merged WAL file
@@ -123,7 +123,7 @@ func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
 		return err
 	}
 
-	newActiveFilePath := filepath.Join(ls.cfg.Directory, fmt.Sprintf(WAL_FILE_NAME_FORMAT, 0))
+	newActiveFilePath := filepath.Join(ls.cfg.Directory, fmt.Sprintf(storagecommon.WAL_FILE_NAME_FORMAT, 0))
 
 	// rename the temporary index file to the active index
 	err = os.Rename(tempMergedFilePath, newActiveFilePath)
@@ -138,7 +138,7 @@ func (ls *LshtStorage) garbageCollectOldFilesDBMuLocked() error {
 		return fmt.Errorf("error syncing directory: %w", err)
 	}
 
-	ls.activeWALFile, err = NewWALFileWithPath(newActiveFilePath, 0)
+	ls.activeWALFile, err = storagecommon.NewWALFileWithPath(newActiveFilePath, 0)
 	if err != nil {
 		return fmt.Errorf("error creating new active file handler: %w", err)
 	}
@@ -153,7 +153,7 @@ func (ls *LshtStorage) cleanupOldFiles() error {
 		}
 	}
 
-	ls.oldWALFilesMap = make(map[int]*WriteAheadLogFile)
+	ls.oldWALFilesMap = make(map[int]*storagecommon.WriteAheadLogFile)
 
 	deleteExistingDBFiles := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -162,11 +162,11 @@ func (ls *LshtStorage) cleanupOldFiles() error {
 		if info.IsDir() {
 			return nil
 		}
-		if filepath.Base(path) == LOCKFILE {
+		if filepath.Base(path) == storagecommon.LOCKFILE {
 			return nil
 		}
 
-		if filepath.Ext(path) == WAL_FILE_EXTENSION {
+		if filepath.Ext(path) == storagecommon.WAL_FILE_EXTENSION {
 			err = os.Remove(path)
 			if err != nil {
 				return err
@@ -184,12 +184,12 @@ func (ls *LshtStorage) cleanupOldFiles() error {
 }
 
 func (ls *LshtStorage) mergeWalFiles(tempMergedFilePath string) error {
-	mergeWalfile, err := NewWALFileWithPath(tempMergedFilePath, 0)
+	mergeWalfile, err := storagecommon.NewWALFileWithPath(tempMergedFilePath, 0)
 	if err != nil {
 		return err
 	}
 
-	ls.keyLocationIndex.Map(func(key string, metaData index.Meta) error {
+	ls.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
 		record, err := ls.get(key)
 		if err != nil {
 			return fmt.Errorf("error getting key(%s): %v", key, err)

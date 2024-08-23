@@ -1,4 +1,4 @@
-package index
+package storagecommon
 
 type DatabaseIndex interface {
 	Get(key string) (Meta, error)
