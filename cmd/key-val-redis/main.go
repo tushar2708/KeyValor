@@ -25,24 +25,26 @@ func main() {
 	homeDir, _ := os.UserHomeDir()
 	keyValurStoreDir := filepath.Join(homeDir, "keyvalor")
 	os.MkdirAll(keyValurStoreDir, fs.ModePerm)
-	store, err := KeyValor.NewKeyValorDB(KeyValor.WithDirectory(keyValurStoreDir))
+	db, err := KeyValor.NewKeyValorDB(KeyValor.WithDirectory(keyValurStoreDir))
 	if err != nil {
 		panic(fmt.Sprintf("cannot initialize KeyValor store, err: [%+v]", err))
 	}
 
 	err = redcon.ListenAndServe(addr,
 		func(conn redcon.Conn, cmd redcon.Command) {
+
+			if len(cmd.Args) == 0 {
+				conn.WriteError(fmt.Sprintf("ERR no arguments for command: [%s]", string(cmd.Raw)))
+				return
+			}
+
 			commandName := strings.ToLower(string(cmd.Args[0]))
-			switch commandName {
-			default:
+
+			commandFunc, supported := commands.CommandMap[commandName]
+			if !supported {
 				conn.WriteError("ERR unknown command '" + commandName + "'")
-			case "ping":
-				conn.WriteString("PONG")
-			case "quit":
-				conn.WriteString("OK")
-				conn.Close()
-			case "set", "get", "del", "keys", "exists", "expire", "ttl":
-				commands.CommandMap[commandName](conn, cmd.Args, &mu, store)
+			} else {
+				commandFunc(conn, cmd.Args, &mu, db)
 			}
 		},
 		func(conn redcon.Conn) bool {
@@ -54,7 +56,7 @@ func main() {
 			// This is called when the connection has been closed
 			log.Printf("closed: %s, err: %v", conn.RemoteAddr(), err)
 			log.Println("closing key-value store")
-			store.Shutdown()
+			db.Shutdown()
 		},
 	)
 	if err != nil {

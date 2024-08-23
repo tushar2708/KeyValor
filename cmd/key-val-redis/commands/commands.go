@@ -16,10 +16,12 @@ type CommandFunc func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 )
 
 var CommandMap map[string]CommandFunc = map[string]CommandFunc{
+	"ping":   Ping,
+	"quit":   Quit,
 	"set":    Set,
 	"get":    Get,
 	"del":    Delete,
@@ -29,18 +31,37 @@ var CommandMap map[string]CommandFunc = map[string]CommandFunc{
 	"ttl":    Ttl,
 }
 
+var Ping CommandFunc = func(
+	conn redcon.Conn,
+	args [][]byte,
+	mu *sync.RWMutex,
+	db *KeyValor.KeyValorDatabase,
+) {
+	conn.WriteString("PONG")
+}
+
+var Quit CommandFunc = func(
+	conn redcon.Conn,
+	args [][]byte,
+	mu *sync.RWMutex,
+	db *KeyValor.KeyValorDatabase,
+) {
+	conn.WriteString("OK")
+	conn.Close()
+}
+
 var Set CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 3 {
 		conn.WriteError(fmt.Sprintf(InfalidArgumentsErrorMsg, string(args[0])))
 		return
 	}
 	mu.Lock()
-	err := store.Set(string(args[1]), args[2])
+	err := db.Set(string(args[1]), args[2])
 	mu.Unlock()
 
 	if err != nil {
@@ -54,14 +75,14 @@ var Get CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 2 {
 		conn.WriteError(fmt.Sprintf(InfalidArgumentsErrorMsg, string(args[0])))
 		return
 	}
 	mu.RLock()
-	val, err := store.Get(string(args[1]))
+	val, err := db.Get(string(args[1]))
 	mu.RUnlock()
 
 	if err != nil {
@@ -76,14 +97,14 @@ var Delete CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 2 {
 		conn.WriteError(fmt.Sprintf(InfalidArgumentsErrorMsg, string(args[0])))
 		return
 	}
 	mu.Lock()
-	err := store.Delete(string(args[1]))
+	err := db.Delete(string(args[1]))
 	mu.Unlock()
 	if err != nil {
 		conn.WriteInt(0)
@@ -96,14 +117,14 @@ var Exists CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 2 {
 		conn.WriteError(fmt.Sprintf(InfalidArgumentsErrorMsg, string(args[0])))
 		return
 	}
 	mu.RLock()
-	exists := store.Exists(string(args[1]))
+	exists := db.Exists(string(args[1]))
 	mu.RUnlock()
 	if !exists {
 		conn.WriteInt(0)
@@ -116,14 +137,14 @@ var Keys CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 2 {
 		conn.WriteError(fmt.Sprintf(InfalidArgumentsErrorMsg, string(args[0])))
 		return
 	}
 	mu.RLock()
-	keys, err := store.Keys(string(args[1]))
+	keys, err := db.Keys(string(args[1]))
 	mu.RUnlock()
 	if err != nil {
 		conn.WriteError(err.Error())
@@ -136,7 +157,7 @@ var Ttl CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) != 2 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(args[0]) + "' command")
@@ -144,7 +165,7 @@ var Ttl CommandFunc = func(
 	}
 
 	mu.RLock()
-	ttl, err := store.TTL(string(args[1]))
+	ttl, err := db.TTL(string(args[1]))
 	mu.RUnlock()
 	if err != nil {
 		conn.WriteError(err.Error())
@@ -157,7 +178,7 @@ var Expire CommandFunc = func(
 	conn redcon.Conn,
 	args [][]byte,
 	mu *sync.RWMutex,
-	store *KeyValor.KeyValorDatabase,
+	db *KeyValor.KeyValorDatabase,
 ) {
 	if len(args) < 3 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(args[0]) + "' command")
@@ -172,7 +193,7 @@ var Expire CommandFunc = func(
 	expiryTime := time.Unix(0, expiryNanos)
 
 	mu.Lock()
-	err = store.Expire(string(args[1]), &expiryTime)
+	err = db.Expire(string(args[1]), &expiryTime)
 	mu.Unlock()
 	if err != nil {
 		conn.WriteInt(-1)
