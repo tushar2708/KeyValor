@@ -29,9 +29,9 @@ type KeyValorDatabase struct {
 	cfg        *DBCfgOpts
 	bufferPool sync.Pool // crate an object pool to reuse buffers
 
-	keyLocationIndex index.LogStructuredKeyIndex
-	activeDataFile   *storage.DataFile
-	oldDatafilesMap  map[int]*storage.DataFile
+	keyLocationIndex index.DatabaseIndex
+	activeWALFile    *storage.WriteAheadLogFile
+	oldWALFilesMap   map[int]*storage.WriteAheadLogFile
 	lockFile         *os.File
 }
 
@@ -42,11 +42,11 @@ func NewKeyValorDB(options ...Option) (*KeyValorDatabase, error) {
 	}
 
 	var (
-		lockFile     *os.File
-		oldDataFiles = make(map[int]*storage.DataFile)
+		lockFile    *os.File
+		oldWalFiles = make(map[int]*storage.WriteAheadLogFile)
 	)
 
-	_, ids, err := storage.ListDataFiles(opts.directory)
+	_, ids, err := storage.ListWALFiles(opts.directory)
 	if err != nil {
 		return nil, err
 	}
@@ -54,11 +54,11 @@ func NewKeyValorDB(options ...Option) (*KeyValorDatabase, error) {
 	sort.Ints(ids)
 
 	for _, id := range ids {
-		dataFile, err := storage.NewDataFile(opts.directory, id)
+		walFile, err := storage.NewWALFile(opts.directory, id)
 		if err != nil {
 			return nil, err
 		}
-		oldDataFiles[id] = dataFile
+		oldWalFiles[id] = walFile
 	}
 
 	lockFilePath := filepath.Join(opts.directory, storage.LOCKFILE)
@@ -68,12 +68,12 @@ func NewKeyValorDB(options ...Option) (*KeyValorDatabase, error) {
 	}
 
 	nextIndex := len(ids) + 1
-	activeDataFile, err := storage.NewDataFile(opts.directory, nextIndex)
+	activeWalFile, err := storage.NewWALFile(opts.directory, nextIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	keyLocationHash := make(index.LogStructuredKeyIndex, 0)
+	keyLocationHash := index.NewLogStructuredHashTableIndex()
 
 	indexFilePath := filepath.Join(opts.directory, storage.INDEX_FILENAME)
 	if fileExists(indexFilePath) {
@@ -90,8 +90,8 @@ func NewKeyValorDB(options ...Option) (*KeyValorDatabase, error) {
 			},
 		},
 		keyLocationIndex: keyLocationHash,
-		activeDataFile:   activeDataFile,
-		oldDatafilesMap:  oldDataFiles,
+		activeWALFile:    activeWalFile,
+		oldWALFilesMap:   oldWalFiles,
 		lockFile:         lockFile,
 	}
 
@@ -151,14 +151,14 @@ func (db *KeyValorDatabase) Shutdown() error {
 	}
 
 	// close the active file
-	if err := db.activeDataFile.Close(); err != nil {
-		return fmt.Errorf("error closing active data file: %w", err)
+	if err := db.activeWALFile.Close(); err != nil {
+		return fmt.Errorf("error closing active WAL file: %w", err)
 	}
 
 	// close old files
-	for _, file := range db.oldDatafilesMap {
+	for _, file := range db.oldWALFilesMap {
 		if err := file.Close(); err != nil {
-			return fmt.Errorf("error closing old data file: %w", err)
+			return fmt.Errorf("error closing old WAL file: %w", err)
 		}
 	}
 

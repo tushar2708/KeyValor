@@ -28,9 +28,9 @@ func (db *KeyValorDatabase) getAndValidateMuLocked(key string) ([]byte, error) {
 }
 
 func (db *KeyValorDatabase) get(key string) (storage.Record, error) {
-	meta, ok := db.keyLocationIndex[key]
-	if !ok {
-		return storage.Record{}, constants.ErrKeyMissing
+	meta, err := db.keyLocationIndex.Get(key)
+	if err != nil {
+		return storage.Record{}, err
 	}
 
 	file, err := db.getAppropriateFile(meta)
@@ -61,20 +61,20 @@ func (db *KeyValorDatabase) get(key string) (storage.Record, error) {
 	return record, nil
 }
 
-func (db *KeyValorDatabase) getAppropriateFile(meta index.Meta) (*storage.DataFile, error) {
-	if meta.FileID == db.activeDataFile.ID() {
-		return db.activeDataFile, nil
+func (db *KeyValorDatabase) getAppropriateFile(meta index.Meta) (*storage.WriteAheadLogFile, error) {
+	if meta.FileID == db.activeWALFile.ID() {
+		return db.activeWALFile, nil
 	}
-	file, ok := db.oldDatafilesMap[meta.FileID]
+	file, ok := db.oldWALFilesMap[meta.FileID]
 	if !ok {
-		return nil, constants.ErrDataFileNotFound
+		return nil, constants.ErrWalFileNotFound
 	}
 
 	return file, nil
 }
 
 func (db *KeyValorDatabase) set(
-	file *storage.DataFile,
+	file *storage.WriteAheadLogFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
@@ -109,11 +109,11 @@ func (db *KeyValorDatabase) set(
 		return err
 	}
 
-	db.keyLocationIndex[key] = index.Meta{
+	db.keyLocationIndex.Put(key, index.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
 		RecordOffset: file.GetCurrentOffset(),
 		RecordSize:   len(buf.Bytes()),
-	}
+	})
 	return nil
 }

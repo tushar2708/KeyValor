@@ -1,3 +1,4 @@
 main
 .vscode
 vendor
+cmd/*/__debug_bin*

@@ -19,8 +19,8 @@ var (
 	// ErrChecksumIsInvalid is returned when a record's checksum is invalid
 	ErrChecksumIsInvalid = errors.New("the checksum of the record is invalid")
 
-	// ErrDataFileNotFound is returned when a record's data file is not found
-	ErrDataFileNotFound = errors.New("the data file is missing for the given File ID")
-	// ErrErrorReadingRecordFromFile is returned when a record couldn't be read from the data file
-	ErrErrorReadingRecordFromFile = errors.New("error reading record from data file")
+	// ErrWalFileNotFound is returned when a record's WAL file is not found
+	ErrWalFileNotFound = errors.New("the WAL file is missing for the given File ID")
+	// ErrErrorReadingRecordFromFile is returned when a record couldn't be read from the WAL file
+	ErrErrorReadingRecordFromFile = errors.New("error reading record from WAL file")
 )

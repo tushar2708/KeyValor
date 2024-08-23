@@ -78,8 +78,8 @@ func (db *KeyValorDatabase) MGet(keys []string) ([]Value, error) {
 func (db *KeyValorDatabase) Exists(key string) bool {
 	db.RLock()
 	defer db.RUnlock()
-	_, ok := db.keyLocationIndex[key]
-	return ok
+	_, err := db.keyLocationIndex.Get(key)
+	return err == nil
 }
 
 // Set inserts or updates a key-value pair in the key-value store.
@@ -100,7 +100,7 @@ func (db *KeyValorDatabase) Set(key string, value []byte) error {
 		return fmt.Errorf("invalid key or value")
 	}
 
-	return db.set(db.activeDataFile, key, value, nil)
+	return db.set(db.activeWALFile, key, value, nil)
 }
 
 // Delete removes a key-value pair from the key-value store.
@@ -117,12 +117,12 @@ func (db *KeyValorDatabase) Delete(key string) error {
 	defer db.Unlock()
 
 	// write a tombstone to the database
-	if err := db.set(db.activeDataFile, key, []byte{}, nil); err != nil {
+	if err := db.set(db.activeWALFile, key, []byte{}, nil); err != nil {
 		return err
 	}
 
 	// delete the value from in-memory index
-	delete(db.keyLocationIndex, key)
+	db.keyLocationIndex.Delete(key)
 	return nil
 }
 
@@ -140,7 +140,7 @@ func (db *KeyValorDatabase) Keys(regex string) ([]string, error) {
 	return keysMatchingRegex(db.keyLocationIndex, regex)
 }
 
-func keysMatchingRegex(index index.LogStructuredKeyIndex, pattern string) ([]string, error) {
+func keysMatchingRegex(dbIndex index.DatabaseIndex, pattern string) ([]string, error) {
 	// Compile the regex pattern
 	var re *regexp.Regexp
 	var err error
@@ -154,12 +154,12 @@ func keysMatchingRegex(index index.LogStructuredKeyIndex, pattern string) ([]str
 	var matchingKeys []string
 
 	// Iterate over the map and add matching keys to the slice
-	for key := range index {
-		// avoid regex check if we have a wildcard regex
+	dbIndex.Map(func(key string, metaData index.Meta) error {
 		if pattern == "*" || re.MatchString(key) {
 			matchingKeys = append(matchingKeys, key)
 		}
-	}
+		return nil
+	})
 
 	return matchingKeys, nil
 }
@@ -174,7 +174,7 @@ func (db *KeyValorDatabase) Expire(key string, expireTime *time.Time) error {
 	}
 
 	record.Header.SetExpiry(expireTime.UnixNano())
-	return db.set(db.activeDataFile, key, record.Value, expireTime)
+	return db.set(db.activeWALFile, key, record.Value, expireTime)
 }
 
 // Redis-compatible INCR command
@@ -243,7 +243,7 @@ func (db *KeyValorDatabase) SetEx(key string, value []byte, ttlSeconds int64) er
 	defer db.Unlock()
 
 	expireTime := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-	return db.set(db.activeDataFile, key, value, &expireTime)
+	return db.set(db.activeWALFile, key, value, &expireTime)
 }
 
 // Redis-compatible PERSIST command
@@ -257,5 +257,5 @@ func (db *KeyValorDatabase) Persist(key string) error {
 	}
 
 	record.Header.SetExpiry(0)
-	return db.set(db.activeDataFile, key, record.Value, nil)
+	return db.set(db.activeWALFile, key, record.Value, nil)
 }
