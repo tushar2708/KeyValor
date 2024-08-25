@@ -1,36 +1,29 @@
 package hashtable
 
 import (
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 
 	"KeyValor/config"
 	"KeyValor/internal/storage/storagecommon"
+	"KeyValor/internal/storage/wal"
 	"KeyValor/internal/utils/fileutils"
 )
 
 type HashTableStorage struct {
-	sync.RWMutex
-	cfg              *config.DBCfgOpts
-	bufferPool       sync.Pool // crate an object pool to reuse buffers
+	*storagecommon.CommonStorage
 	keyLocationIndex storagecommon.DatabaseIndex
-	activeWALFile    *storagecommon.WriteAheadLogFile
-	oldWALFilesMap   map[int]*storagecommon.WriteAheadLogFile
-	lockFile         *os.File
+	oldWALFilesMap   map[int]*wal.WriteAheadLogRWFile
 }
 
 func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 
 	var (
-		lockFile    *os.File
-		oldWalFiles = make(map[int]*storagecommon.WriteAheadLogFile)
+		oldWalFiles = make(map[int]*wal.WriteAheadLogRWFile)
 	)
 
-	_, ids, err := storagecommon.ListWALFiles(cfg.Directory)
+	_, ids, err := wal.ListWALFiles(cfg.Directory)
 	if err != nil {
 		return nil, err
 	}
@@ -38,54 +31,46 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 	sort.Ints(ids)
 
 	for _, id := range ids {
-		walFile, err := storagecommon.NewWALFile(cfg.Directory, id)
+		walFile, err := wal.NewWALFile(cfg.Directory, id, wal.WAL_MODE_READ_ONLY)
 		if err != nil {
 			return nil, err
 		}
 		oldWalFiles[id] = walFile
 	}
 
-	lockFilePath := filepath.Join(cfg.Directory, storagecommon.LOCKFILE)
-	lockFile, err = storagecommon.AcquireLockFile(lockFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("error creating lockfile: %w", err)
-	}
-
 	nextIndex := len(ids) + 1
-	activeWalFile, err := storagecommon.NewWALFile(cfg.Directory, nextIndex)
+	activeWalFile, err := wal.NewWALFile(cfg.Directory, nextIndex, wal.WAL_MODE_READ_WRITE)
 	if err != nil {
 		return nil, err
 	}
 
 	keyLocationHash := NewLogStructuredHashTableIndex()
 
-	indexFilePath := filepath.Join(cfg.Directory, storagecommon.INDEX_FILENAME)
+	indexFilePath := filepath.Join(cfg.Directory, INDEX_FILENAME)
 	if fileutils.FileExists(indexFilePath) {
 		if err := keyLocationHash.LoadFromFile(indexFilePath); err != nil {
 			return nil, fmt.Errorf("error decoding index file: %w", err)
 		}
 	}
 
+	cs, err := storagecommon.NewCommonStorage(cfg, activeWalFile)
+	if err != nil {
+		return nil, fmt.Errorf("error creating common storage: %w", err)
+	}
+
 	return &HashTableStorage{
-		cfg: cfg,
-		bufferPool: sync.Pool{
-			New: func() interface{} {
-				return bytes.NewBuffer([]byte{})
-			},
-		},
+		CommonStorage:    cs,
 		keyLocationIndex: keyLocationHash,
-		activeWALFile:    activeWalFile,
 		oldWALFilesMap:   oldWalFiles,
-		lockFile:         lockFile,
 	}, nil
 }
 
 func (hts *HashTableStorage) Init() error {
 	// run periodic compaction
-	go hts.CompactionLoop(hts.cfg.CompactInterval)
+	go hts.CompactionLoop(hts.Cfg.CompactInterval)
 
 	// run periodic sync
-	go hts.FileRotationLoop(hts.cfg.CheckFileSizeInterval)
+	go hts.FileRotationLoop(hts.Cfg.CheckFileSizeInterval)
 
 	return nil
 }
@@ -97,7 +82,7 @@ func (hts *HashTableStorage) Close() error {
 	}
 
 	// close the active file
-	if err := hts.activeWALFile.Close(); err != nil {
+	if err := hts.ActiveWALFile.Close(); err != nil {
 		return fmt.Errorf("error closing active WAL file: %w", err)
 	}
 
@@ -109,7 +94,7 @@ func (hts *HashTableStorage) Close() error {
 	}
 
 	// free the lock file
-	if err := storagecommon.FreeLockFile(hts.lockFile); err != nil {
+	if err := storagecommon.FreeLockFile(hts.LockFile); err != nil {
 		return fmt.Errorf("error freeing lock file: %w", err)
 	}
 	return nil

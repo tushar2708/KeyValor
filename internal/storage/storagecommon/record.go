@@ -9,7 +9,7 @@ import (
 	"KeyValor/internal/utils/timeutils"
 )
 
-type Record struct {
+type DataRecord struct {
 	Header Header
 	Key    string
 	Value  []byte
@@ -57,7 +57,7 @@ func (h *Header) Decode(record []byte) error {
 	return binary.Read(bytes.NewReader(record), binary.LittleEndian, h)
 }
 
-func (r *Record) IsExpired() bool {
+func (r *DataRecord) IsExpired() bool {
 	// 0 value means no expiry was set
 	if r.Header.Expiry == 0 {
 		return false
@@ -65,17 +65,19 @@ func (r *Record) IsExpired() bool {
 	return time.Now().Unix() > int64(r.Header.Expiry)
 }
 
-func (r *Record) IsChecksumValid() bool {
+func (r *DataRecord) IsChecksumValid() bool {
 	return crc32.ChecksumIEEE(r.Value) == r.Header.Crc
 }
 
-func (r *Record) Encode(buff *bytes.Buffer) error {
+func (r *DataRecord) Encode(buff *bytes.Buffer) error {
 	// write header to the buffer
 	if err := r.Header.Encode(buff); err != nil {
 		return err
 	}
 
-	// write key, and then value to the buffer
+	// write key, and then value to the buffer, because these
+	// variable sized values can't be encoded using binary.Write
+	// https://pkg.go.dev/encoding/binary#Write
 	if _, err := buff.WriteString(r.Key); err != nil {
 		return err
 	}

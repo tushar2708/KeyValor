@@ -7,6 +7,7 @@ import (
 
 	"KeyValor/constants"
 	"KeyValor/internal/storage/storagecommon"
+	"KeyValor/internal/storage/wal"
 )
 
 func (hts *HashTableStorage) getAndValidateMuLocked(key string) ([]byte, error) {
@@ -26,25 +27,25 @@ func (hts *HashTableStorage) getAndValidateMuLocked(key string) ([]byte, error) 
 	return record.Value, nil
 }
 
-func (hts *HashTableStorage) get(key string) (storagecommon.Record, error) {
+func (hts *HashTableStorage) get(key string) (storagecommon.DataRecord, error) {
 	meta, err := hts.keyLocationIndex.Get(key)
 	if err != nil {
-		return storagecommon.Record{}, err
+		return storagecommon.DataRecord{}, err
 	}
 
 	file, err := hts.getAppropriateFile(meta)
 	if err != nil {
-		return storagecommon.Record{}, err
+		return storagecommon.DataRecord{}, err
 	}
 
-	data, err := file.Read(meta.RecordOffset, meta.RecordSize)
+	data, err := file.ReadAt(meta.RecordOffset, meta.RecordSize)
 	if err != nil {
-		return storagecommon.Record{}, err
+		return storagecommon.DataRecord{}, err
 	}
 
 	var header storagecommon.Header
 	if err := header.Decode(data); err != nil {
-		return storagecommon.Record{}, fmt.Errorf("error decoding record header: %w", err)
+		return storagecommon.DataRecord{}, fmt.Errorf("error decoding record header: %w", err)
 	}
 
 	// structure of record :
@@ -52,7 +53,7 @@ func (hts *HashTableStorage) get(key string) (storagecommon.Record, error) {
 	valueOffset := meta.RecordSize - int(header.GetValueSize())
 	value := data[valueOffset:]
 
-	record := storagecommon.Record{
+	record := storagecommon.DataRecord{
 		Header: header,
 		Key:    key,
 		Value:  value,
@@ -60,9 +61,9 @@ func (hts *HashTableStorage) get(key string) (storagecommon.Record, error) {
 	return record, nil
 }
 
-func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*storagecommon.WriteAheadLogFile, error) {
-	if meta.FileID == hts.activeWALFile.ID() {
-		return hts.activeWALFile, nil
+func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*wal.WriteAheadLogRWFile, error) {
+	if meta.FileID == hts.ActiveWALFile.ID() {
+		return hts.ActiveWALFile, nil
 	}
 	file, ok := hts.oldWALFilesMap[meta.FileID]
 	if !ok {
@@ -73,7 +74,7 @@ func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*stora
 }
 
 func (hts *HashTableStorage) set(
-	file *storagecommon.WriteAheadLogFile,
+	file *wal.WriteAheadLogRWFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
@@ -84,16 +85,16 @@ func (hts *HashTableStorage) set(
 		header.SetExpiry(expiryTime.UnixNano())
 	}
 
-	record := storagecommon.Record{
+	record := storagecommon.DataRecord{
 		Header: header,
 		Key:    key,
 		Value:  value,
 	}
 
-	buf := hts.bufferPool.Get().(*bytes.Buffer)
+	buf := hts.BufferPool.Get().(*bytes.Buffer)
 
 	// return the buffer to the pool
-	defer hts.bufferPool.Put(buf)
+	defer hts.BufferPool.Put(buf)
 
 	// reset the buffer before returning
 	defer buf.Reset()
@@ -101,6 +102,8 @@ func (hts *HashTableStorage) set(
 	if err := record.Encode(buf); err != nil {
 		return err
 	}
+
+	recordStartOffset := file.GetCurrentWriteOffset()
 
 	// write (append) to the file
 	_, err := file.Write(buf.Bytes())
@@ -111,7 +114,7 @@ func (hts *HashTableStorage) set(
 	hts.keyLocationIndex.Put(key, storagecommon.Meta{
 		Timestamp:    record.Header.GetTs(),
 		FileID:       file.ID(),
-		RecordOffset: file.GetCurrentOffset(),
+		RecordOffset: recordStartOffset,
 		RecordSize:   len(buf.Bytes()),
 	})
 	return nil

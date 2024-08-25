@@ -1,4 +1,4 @@
-package hashtable
+package lsmtree
 
 import (
 	"fmt"
@@ -22,11 +22,11 @@ import (
 // - An error if the key is missing, expired, or the checksum is invalid.
 //
 // Note: This function does not perform any validation on the key or value.
-func (hts *HashTableStorage) Get(key string) ([]byte, error) {
-	hts.RLock()
-	defer hts.RUnlock()
+func (lts *LSMTreeStorage) Get(key string) ([]byte, error) {
+	lts.RLock()
+	defer lts.RUnlock()
 
-	return hts.getAndValidateMuLocked(key)
+	return lts.getAndValidateMuLocked(key)
 }
 
 // MGet retrieves the values associated with the given keys from the key-value store.
@@ -41,14 +41,14 @@ func (hts *HashTableStorage) Get(key string) ([]byte, error) {
 //     If the value is successfully retrieved, both the value and error will be nil.
 //
 // Note: This function does not perform any validation on the keys or values.
-func (hts *HashTableStorage) MGet(keys []string) ([]dbops.Value, error) {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) MGet(keys []string) ([]dbops.Value, error) {
+	lts.Lock()
+	defer lts.Unlock()
 
 	values := make([]dbops.Value, len(keys))
 
 	for i, key := range keys {
-		if val, err := hts.getAndValidateMuLocked(key); err != nil {
+		if val, err := lts.getAndValidateMuLocked(key); err != nil {
 			values[i] = dbops.Value{
 				Val: nil,
 				Err: err,
@@ -73,11 +73,12 @@ func (hts *HashTableStorage) MGet(keys []string) ([]dbops.Value, error) {
 // Returns:
 //   - A boolean value indicating whether the key exists in the store.
 //     Returns true if the key exists, false otherwise.
-func (hts *HashTableStorage) Exists(key string) bool {
-	hts.RLock()
-	defer hts.RUnlock()
-	_, err := hts.keyLocationIndex.Get(key)
-	return err == nil
+func (lts *LSMTreeStorage) Exists(key string) bool {
+	// lts.RLock()
+	// defer lts.RUnlock()
+	// _, err := lts.keyLocationIndex.Get(key)
+	// return err == nil
+	panic("not implemented")
 }
 
 // Set inserts or updates a key-value pair in the key-value store.
@@ -90,15 +91,15 @@ func (hts *HashTableStorage) Exists(key string) bool {
 // Returns:
 //   - An error if the key or value is invalid or if there is an issue writing to the database.
 //     Otherwise, it returns nil.
-func (hts *HashTableStorage) Set(key string, value []byte) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Set(key string, value []byte) error {
+	lts.Lock()
+	defer lts.Unlock()
 
 	if err := validateEntry(key, value); err != nil {
 		return fmt.Errorf("invalid key or value")
 	}
 
-	return hts.set(hts.activeWALFile, key, value, nil)
+	return lts.set(lts.ActiveWALFile, key, value, nil)
 }
 
 // Delete removes a key-value pair from the key-value store.
@@ -110,32 +111,37 @@ func (hts *HashTableStorage) Set(key string, value []byte) error {
 // Returns:
 //   - An error if there is an issue writing to the database or if the key is missing.
 //     Otherwise, it returns nil.
-func (hts *HashTableStorage) Delete(key string) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Delete(key string) error {
+	// lts.Lock()
+	// defer lts.Unlock()
 
-	// write a tombstone to the database
-	if err := hts.set(hts.activeWALFile, key, []byte{}, nil); err != nil {
-		return err
-	}
+	// // write a tombstone to the database
+	// if err := lts.set(lts.ActiveWALFile, key, []byte{}, nil); err != nil {
+	// 	return err
+	// }
 
-	// delete the value from in-memory index
-	hts.keyLocationIndex.Delete(key)
-	return nil
+	// // delete the value from in-memory index
+	// lts.keyLocationIndex.Delete(key)
+	// return nil
+	panic("not implemented")
+
 }
 
-func (hts *HashTableStorage) AllKeys() ([]string, error) {
-	hts.RLock()
-	defer hts.RUnlock()
+func (lts *LSMTreeStorage) AllKeys() ([]string, error) {
+	// lts.RLock()
+	// defer lts.RUnlock()
 
-	return keysMatchingRegex(hts.keyLocationIndex, "*")
+	// return keysMatchingRegex(lts.keyLocationIndex, "*")
+	panic("not implemented")
+
 }
 
-func (hts *HashTableStorage) Keys(regex string) ([]string, error) {
-	hts.RLock()
-	defer hts.RUnlock()
+func (lts *LSMTreeStorage) Keys(regex string) ([]string, error) {
+	// lts.RLock()
+	// defer lts.RUnlock()
 
-	return keysMatchingRegex(hts.keyLocationIndex, regex)
+	// return keysMatchingRegex(lts.keyLocationIndex, regex)
+	panic("not implemented")
 }
 
 func keysMatchingRegex(dbIndex storagecommon.DatabaseIndex, pattern string) ([]string, error) {
@@ -162,25 +168,25 @@ func keysMatchingRegex(dbIndex storagecommon.DatabaseIndex, pattern string) ([]s
 	return matchingKeys, nil
 }
 
-func (hts *HashTableStorage) Expire(key string, expireTime *time.Time) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Expire(key string, expireTime *time.Time) error {
+	lts.Lock()
+	defer lts.Unlock()
 
-	record, err := hts.get(key)
+	record, err := lts.get(key)
 	if err != nil {
 		return err
 	}
 
 	record.Header.SetExpiry(expireTime.UnixNano())
-	return hts.set(hts.activeWALFile, key, record.Value, expireTime)
+	return lts.set(lts.ActiveWALFile, key, record.Value, expireTime)
 }
 
 // Redis-compatible INCR command
-func (hts *HashTableStorage) Incr(key string) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Incr(key string) error {
+	lts.Lock()
+	defer lts.Unlock()
 
-	value, err := hts.getAndValidateMuLocked(key)
+	value, err := lts.getAndValidateMuLocked(key)
 	if err != nil {
 		return err
 	}
@@ -191,15 +197,15 @@ func (hts *HashTableStorage) Incr(key string) error {
 	}
 
 	intValue++
-	return hts.Set(key, dataconvutils.IntToBytes(intValue))
+	return lts.Set(key, dataconvutils.IntToBytes(intValue))
 }
 
 // Redis-compatible DECR command
-func (hts *HashTableStorage) Decr(key string) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Decr(key string) error {
+	lts.Lock()
+	defer lts.Unlock()
 
-	value, err := hts.getAndValidateMuLocked(key)
+	value, err := lts.getAndValidateMuLocked(key)
 	if err != nil {
 		return err
 	}
@@ -210,15 +216,15 @@ func (hts *HashTableStorage) Decr(key string) error {
 	}
 
 	intValue--
-	return hts.Set(key, dataconvutils.IntToBytes(intValue))
+	return lts.Set(key, dataconvutils.IntToBytes(intValue))
 }
 
 // Redis-compatible TTL command
-func (hts *HashTableStorage) TTL(key string) (int64, error) {
-	hts.RLock()
-	defer hts.RUnlock()
+func (lts *LSMTreeStorage) TTL(key string) (int64, error) {
+	lts.RLock()
+	defer lts.RUnlock()
 
-	record, err := hts.get(key)
+	record, err := lts.get(key)
 	if err != nil {
 		return -1, err
 	}
@@ -236,24 +242,24 @@ func (hts *HashTableStorage) TTL(key string) (int64, error) {
 }
 
 // Redis-compatible SETEX command
-func (hts *HashTableStorage) SetEx(key string, value []byte, ttlSeconds int64) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) SetEx(key string, value []byte, ttlSeconds int64) error {
+	lts.Lock()
+	defer lts.Unlock()
 
 	expireTime := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-	return hts.set(hts.activeWALFile, key, value, &expireTime)
+	return lts.set(lts.ActiveWALFile, key, value, &expireTime)
 }
 
 // Redis-compatible PERSIST command
-func (hts *HashTableStorage) Persist(key string) error {
-	hts.Lock()
-	defer hts.Unlock()
+func (lts *LSMTreeStorage) Persist(key string) error {
+	lts.Lock()
+	defer lts.Unlock()
 
-	record, err := hts.get(key)
+	record, err := lts.get(key)
 	if err != nil {
 		return err
 	}
 
 	record.Header.SetExpiry(0)
-	return hts.set(hts.activeWALFile, key, record.Value, nil)
+	return lts.set(lts.ActiveWALFile, key, record.Value, nil)
 }

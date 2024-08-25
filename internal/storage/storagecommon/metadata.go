@@ -5,6 +5,6 @@ type Meta struct {
 
 	// path to record
 	FileID       int
-	RecordOffset int
+	RecordOffset int64
 	RecordSize   int
 }
