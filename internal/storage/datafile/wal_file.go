@@ -1,8 +1,9 @@
-package wal
+package datafile
 
 import (
 	"KeyValor/internal/utils/strictchecks"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,27 +11,42 @@ import (
 	"sync"
 )
 
-type WALMode int8
+type DataFileMode int8
 
 const (
-	WAL_MODE_READ_WRITE WALMode = iota
-	WAL_MODE_WRITE_ONLY
-	WAL_MODE_READ_ONLY
+	DF_MODE_READ_WRITE DataFileMode = iota
+	DF_MODE_WRITE_ONLY
+	DF_MODE_READ_ONLY
 )
 
-// WriteAheadLogRWFile represents an append-only file,
+type OffsetUtility interface {
+	GetCurrentReadOffset() int64
+	GetCurrentWriteOffset() int64
+	Size() (int64, error)
+}
+
+var _ OffsetUtility = &ReadWriteDataFile{}
+
+type ReaderAtWritetCloser interface {
+	io.ReadWriteCloser
+	io.ReaderAt
+}
+
+var _ ReaderAtWritetCloser = &ReadWriteDataFile{}
+
+// ReadWriteDataFile represents an append-only file,
 // used to store the records on the disk.
-type WriteAheadLogRWFile struct {
+type ReadWriteDataFile struct {
 	sync.RWMutex
 	writer      *os.File
 	reader      *os.File
 	id          int
 	writeOffset int64
 	readOffset  int64
-	mode        WALMode
+	mode        DataFileMode
 }
 
-func ListWALFiles(directory string) (files []string, ids []int, err error) {
+func ListDataFiles(directory string) (files []string, ids []int, err error) {
 	files, err = filepath.Glob(fmt.Sprintf("%s/.db", directory))
 	if err != nil {
 		return nil, nil, err
@@ -53,18 +69,18 @@ func ListWALFiles(directory string) (files []string, ids []int, err error) {
 	return files, ids, nil
 }
 
-func NewWALFile(dir string, fileID int, mode WALMode) (*WriteAheadLogRWFile, error) {
+func NewDataFile(dir string, fileID int, mode DataFileMode) (*ReadWriteDataFile, error) {
 	filePath := filepath.Join(dir, fmt.Sprintf(WAL_FILE_NAME_FORMAT, fileID))
-	return newWALFile(filePath, fileID, mode)
+	return newDataFile(filePath, fileID, mode)
 }
 
-func NewWALFileWithPath(filePath string, fileID int, mode WALMode) (*WriteAheadLogRWFile, error) {
-	return newWALFile(filePath, fileID, mode)
+func NewDataFileWithPath(filePath string, fileID int, mode DataFileMode) (*ReadWriteDataFile, error) {
+	return newDataFile(filePath, fileID, mode)
 }
 
-func newWALFile(filePath string, fileID int, mode WALMode) (*WriteAheadLogRWFile, error) {
+func newDataFile(filePath string, fileID int, mode DataFileMode) (*ReadWriteDataFile, error) {
 
-	wal := &WriteAheadLogRWFile{
+	wal := &ReadWriteDataFile{
 		writer:      nil,
 		reader:      nil,
 		id:          fileID,
@@ -75,7 +91,7 @@ func newWALFile(filePath string, fileID int, mode WALMode) (*WriteAheadLogRWFile
 
 	var err error
 
-	if mode == WAL_MODE_WRITE_ONLY || mode == WAL_MODE_READ_WRITE {
+	if mode == DF_MODE_WRITE_ONLY || mode == DF_MODE_READ_WRITE {
 		wal.writer, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("error opening file for writing db: %w", err)
@@ -90,7 +106,7 @@ func newWALFile(filePath string, fileID int, mode WALMode) (*WriteAheadLogRWFile
 
 	}
 
-	if mode == WAL_MODE_READ_ONLY || mode == WAL_MODE_READ_WRITE {
+	if mode == DF_MODE_READ_ONLY || mode == DF_MODE_READ_WRITE {
 		wal.reader, err = os.Open(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("error opening file for reading db: %w", err)
@@ -100,11 +116,11 @@ func newWALFile(filePath string, fileID int, mode WALMode) (*WriteAheadLogRWFile
 	return wal, nil
 }
 
-func (wal *WriteAheadLogRWFile) ID() int {
+func (wal *ReadWriteDataFile) ID() int {
 	return wal.id
 }
 
-func (wal *WriteAheadLogRWFile) Size() (int64, error) {
+func (wal *ReadWriteDataFile) Size() (int64, error) {
 
 	if wal.writer != nil {
 		stat, err := wal.writer.Stat()
@@ -125,13 +141,13 @@ func (wal *WriteAheadLogRWFile) Size() (int64, error) {
 	return -1, fmt.Errorf("both reader and writer are nil, can't get size")
 }
 
-func (wal *WriteAheadLogRWFile) Sync() error {
+func (wal *ReadWriteDataFile) Sync() error {
 	return wal.writer.Sync()
 }
 
-func (wal *WriteAheadLogRWFile) Write(p []byte) (int, error) {
+func (wal *ReadWriteDataFile) Write(p []byte) (int, error) {
 
-	strictchecks.MustBeTrueOrPanic(wal.mode != WAL_MODE_READ_ONLY, "cannot write in read-only mode (BUG)")
+	strictchecks.MustBeTrueOrPanic(wal.mode != DF_MODE_READ_ONLY, "cannot write in read-only mode (BUG)")
 
 	wal.Lock()
 	defer wal.Unlock()
@@ -142,61 +158,59 @@ func (wal *WriteAheadLogRWFile) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (wal *WriteAheadLogRWFile) GetCurrentWriteOffset() int64 {
+func (wal *ReadWriteDataFile) GetCurrentWriteOffset() int64 {
 	return wal.writeOffset
 }
 
-func (wal *WriteAheadLogRWFile) GetCurrentReadOffset() int64 {
+func (wal *ReadWriteDataFile) GetCurrentReadOffset() int64 {
 	return wal.readOffset
 }
 
-func (wal *WriteAheadLogRWFile) Read(size int) ([]byte, error) {
+func (wal *ReadWriteDataFile) Read(record []byte) (int, error) {
 
-	strictchecks.MustBeTrueOrPanic(wal.mode != WAL_MODE_WRITE_ONLY, "cannot read in write-only mode (BUG)")
+	strictchecks.MustBeTrueOrPanic(wal.mode != DF_MODE_WRITE_ONLY, "cannot read in write-only mode (BUG)")
 
 	wal.RLock()
 	defer wal.RUnlock()
 
-	record := make([]byte, size)
+	size := len(record)
 
 	n, err := wal.reader.ReadAt(record, wal.readOffset)
 	if err != nil {
-		return nil, fmt.Errorf("error reading from file: %w", err)
+		return n, fmt.Errorf("error reading from file: %w", err)
 	}
 	if n != size {
-		return record, fmt.Errorf("error reading record from file: %d", n)
+		return n, fmt.Errorf("error reading record from file: %d", n)
 	}
 
 	wal.readOffset += int64(n)
 
-	return record, nil
+	return n, nil
 }
 
-func (wal *WriteAheadLogRWFile) ReadAt(pos int64, size int) ([]byte, error) {
+func (wal *ReadWriteDataFile) ReadAt(record []byte, pos int64) (int, error) {
 
-	strictchecks.MustBeTrueOrPanic(wal.mode != WAL_MODE_WRITE_ONLY, "cannot read in write-only mode (BUG)")
+	strictchecks.MustBeTrueOrPanic(wal.mode != DF_MODE_WRITE_ONLY, "cannot read in write-only mode (BUG)")
 
 	wal.RLock()
 	defer wal.RUnlock()
 
-	// start := pos - int64(size)
-
-	record := make([]byte, size)
+	size := len(record)
 
 	n, err := wal.reader.ReadAt(record, pos)
 	if err != nil {
-		return nil, fmt.Errorf("error reading from file: %w", err)
+		return n, fmt.Errorf("error reading from file: %w", err)
 	}
 	if n != size {
-		return nil, fmt.Errorf("error reading record from file: %d", n)
+		return n, fmt.Errorf("error reading record from file: %d", n)
 	}
 
 	wal.readOffset = pos + int64(n)
 
-	return record, nil
+	return n, nil
 }
 
-func (wal *WriteAheadLogRWFile) Close() error {
+func (wal *ReadWriteDataFile) Close() error {
 	wal.Lock()
 	defer wal.Unlock()
 

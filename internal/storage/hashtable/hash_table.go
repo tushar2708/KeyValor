@@ -6,24 +6,24 @@ import (
 	"sort"
 
 	"KeyValor/config"
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/storage/wal"
 	"KeyValor/internal/utils/fileutils"
 )
 
 type HashTableStorage struct {
 	*storagecommon.CommonStorage
-	keyLocationIndex storagecommon.DatabaseIndex
-	oldWALFilesMap   map[int]*wal.WriteAheadLogRWFile
+	keyLocationIndex    storagecommon.DatabaseIndex
+	olddatafileFilesMap map[int]*datafile.ReadWriteDataFile
 }
 
 func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 
 	var (
-		oldWalFiles = make(map[int]*wal.WriteAheadLogRWFile)
+		olddatafileFiles = make(map[int]*datafile.ReadWriteDataFile)
 	)
 
-	_, ids, err := wal.ListWALFiles(cfg.Directory)
+	_, ids, err := datafile.ListDataFiles(cfg.Directory)
 	if err != nil {
 		return nil, err
 	}
@@ -31,15 +31,15 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 	sort.Ints(ids)
 
 	for _, id := range ids {
-		walFile, err := wal.NewWALFile(cfg.Directory, id, wal.WAL_MODE_READ_ONLY)
+		datafileFile, err := datafile.NewDataFile(cfg.Directory, id, datafile.DF_MODE_READ_ONLY)
 		if err != nil {
 			return nil, err
 		}
-		oldWalFiles[id] = walFile
+		olddatafileFiles[id] = datafileFile
 	}
 
 	nextIndex := len(ids) + 1
-	activeWalFile, err := wal.NewWALFile(cfg.Directory, nextIndex, wal.WAL_MODE_READ_WRITE)
+	activedatafileFile, err := datafile.NewDataFile(cfg.Directory, nextIndex, datafile.DF_MODE_READ_WRITE)
 	if err != nil {
 		return nil, err
 	}
@@ -53,15 +53,15 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 		}
 	}
 
-	cs, err := storagecommon.NewCommonStorage(cfg, activeWalFile)
+	cs, err := storagecommon.NewCommonStorage(cfg, activedatafileFile)
 	if err != nil {
 		return nil, fmt.Errorf("error creating common storage: %w", err)
 	}
 
 	return &HashTableStorage{
-		CommonStorage:    cs,
-		keyLocationIndex: keyLocationHash,
-		oldWALFilesMap:   oldWalFiles,
+		CommonStorage:       cs,
+		keyLocationIndex:    keyLocationHash,
+		olddatafileFilesMap: olddatafileFiles,
 	}, nil
 }
 
@@ -82,14 +82,14 @@ func (hts *HashTableStorage) Close() error {
 	}
 
 	// close the active file
-	if err := hts.ActiveWALFile.Close(); err != nil {
-		return fmt.Errorf("error closing active WAL file: %w", err)
+	if err := hts.ActiveDataFile.Close(); err != nil {
+		return fmt.Errorf("error closing active datafile file: %w", err)
 	}
 
 	// close old files
-	for _, file := range hts.oldWALFilesMap {
+	for _, file := range hts.olddatafileFilesMap {
 		if err := file.Close(); err != nil {
-			return fmt.Errorf("error closing old WAL file: %w", err)
+			return fmt.Errorf("error closing old datafile file: %w", err)
 		}
 	}
 

@@ -9,8 +9,8 @@ import (
 
 	"KeyValor/constants"
 	"KeyValor/internal/records"
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/storage/wal"
 	"KeyValor/internal/treemapgen"
 	"KeyValor/internal/utils/fileutils"
 
@@ -76,7 +76,7 @@ func (lts *LSMTreeStorage) get(key string) (storagecommon.DataRecord, error) {
 	return storagecommon.DataRecord{}, nil
 }
 
-func (lts *LSMTreeStorage) getAppropriateFile(meta storagecommon.Meta) (*wal.WriteAheadLogRWFile, error) {
+func (lts *LSMTreeStorage) getAppropriateFile(meta storagecommon.Meta) (*datafile.ReadWriteDataFile, error) {
 	/*
 		if meta.FileID == lts.ActiveWALFile.ID() {
 			return lts.ActiveWALFile, nil
@@ -92,7 +92,7 @@ func (lts *LSMTreeStorage) getAppropriateFile(meta storagecommon.Meta) (*wal.Wri
 }
 
 func (lts *LSMTreeStorage) set(
-	wlFile *wal.WriteAheadLogRWFile,
+	wlFile *datafile.ReadWriteDataFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
@@ -139,7 +139,7 @@ func (lts *LSMTreeStorage) rotateMemTableIndex() error {
 	lts.prevMemTableImmutable = lts.activeMemTable
 	lts.activeMemTable = treemapgen.NewSerializableTreeMap[string, *records.CommandRecord](utils.StringComparator)
 
-	lts.ActiveWALFile.Close()
+	lts.ActiveDataFile.Close()
 
 	currentWalFilePath := filepath.Join(lts.Cfg.Directory, CURRENT_WAL_FILE_NAME)
 	tempWalFilePath := filepath.Join(lts.Cfg.Directory, TEMPORARY_WAL_FILE_NAME)
@@ -156,7 +156,7 @@ func (lts *LSMTreeStorage) rotateMemTableIndex() error {
 		return fmt.Errorf("error renaming current WAL file: %w", err)
 	}
 
-	lts.ActiveWALFile, err = wal.NewWALFileWithPath(currentWalFilePath, 0, wal.WAL_MODE_WRITE_ONLY)
+	lts.ActiveDataFile, err = datafile.NewDataFileWithPath(currentWalFilePath, 0, datafile.DF_MODE_WRITE_ONLY)
 	if err != nil {
 		return fmt.Errorf("error creating new active WAL file: %w", err)
 	}

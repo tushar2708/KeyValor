@@ -13,8 +13,8 @@ import (
 
 	"KeyValor/config"
 	"KeyValor/internal/records"
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/storage/wal"
 	"KeyValor/internal/treemapgen"
 )
 
@@ -26,8 +26,6 @@ type LSMTreeStorage struct {
 	prevMemTableImmutable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]
 
 	ssTables []*SSTable
-
-	// pevWalFilePendingForDump *wal.WriteAheadLogRWFile
 }
 
 func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
@@ -62,7 +60,7 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 	if len(files) == 0 {
 		// we have an empty directory
 		nextIndex := 0
-		lsmTree.ActiveWALFile, err = wal.NewWALFile(cfg.Directory, nextIndex, wal.WAL_MODE_WRITE_ONLY)
+		lsmTree.ActiveDataFile, err = datafile.NewDataFile(cfg.Directory, nextIndex, datafile.DF_MODE_WRITE_ONLY)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +106,7 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 			if err != nil {
 				continue
 			}
-			lsmt.ActiveWALFile, err = wal.NewWALFileWithPath(filePath, 0, wal.WAL_MODE_WRITE_ONLY)
+			lsmt.ActiveDataFile, err = datafile.NewDataFileWithPath(filePath, 0, datafile.DF_MODE_WRITE_ONLY)
 			if err != nil {
 				continue
 			}
@@ -134,7 +132,7 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 
 func (lsmt *LSMTreeStorage) restoreMemtableFromWalFile(filePath string) error {
 
-	walFile, err := wal.NewWALFileWithPath(filePath, 0, wal.WAL_MODE_READ_ONLY)
+	walFile, err := datafile.NewDataFileWithPath(filePath, 0, datafile.DF_MODE_READ_ONLY)
 	if err != nil {
 		return err
 	}
@@ -150,7 +148,8 @@ func (lsmt *LSMTreeStorage) restoreMemtableFromWalFile(filePath string) error {
 	for currentPos < fileLen {
 		cmdHeader := records.CommandHeader{}
 		headerLen := cmdHeader.GetHeaderLen()
-		cmdHeaderBytes, err := walFile.Read(headerLen)
+		cmdHeaderBytes := make([]byte, headerLen)
+		_, err = walFile.Read(cmdHeaderBytes)
 		if err != nil {
 			return err
 		}
@@ -168,7 +167,8 @@ func (lsmt *LSMTreeStorage) restoreMemtableFromWalFile(filePath string) error {
 
 		keyValSize := int(cmdHeader.KeySize + cmdHeader.ValSize)
 
-		cmdKeyVal, err := walFile.Read(keyValSize)
+		cmdKeyVal := make([]byte, keyValSize)
+		_, err = walFile.Read(cmdKeyVal)
 		if err != nil {
 			return fmt.Errorf("errror reading command key+value with length %d, %w",
 				keyValSize, err)

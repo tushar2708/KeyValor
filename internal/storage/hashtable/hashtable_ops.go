@@ -98,7 +98,7 @@ func (hts *HashTableStorage) Set(key string, value []byte) error {
 		return fmt.Errorf("invalid key or value")
 	}
 
-	return hts.set(hts.ActiveWALFile, key, value, nil)
+	return hts.set(hts.ActiveDataFile, key, value, nil)
 }
 
 // Delete removes a key-value pair from the key-value store.
@@ -115,7 +115,7 @@ func (hts *HashTableStorage) Delete(key string) error {
 	defer hts.Unlock()
 
 	// write a tombstone to the database
-	if err := hts.set(hts.ActiveWALFile, key, []byte{}, nil); err != nil {
+	if err := hts.set(hts.ActiveDataFile, key, []byte{}, nil); err != nil {
 		return err
 	}
 
@@ -172,7 +172,7 @@ func (hts *HashTableStorage) Expire(key string, expireTime *time.Time) error {
 	}
 
 	record.Header.SetExpiry(expireTime.UnixNano())
-	return hts.set(hts.ActiveWALFile, key, record.Value, expireTime)
+	return hts.set(hts.ActiveDataFile, key, record.Value, expireTime)
 }
 
 // Redis-compatible INCR command
@@ -241,7 +241,7 @@ func (hts *HashTableStorage) SetEx(key string, value []byte, ttlSeconds int64) e
 	defer hts.Unlock()
 
 	expireTime := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-	return hts.set(hts.ActiveWALFile, key, value, &expireTime)
+	return hts.set(hts.ActiveDataFile, key, value, &expireTime)
 }
 
 // Redis-compatible PERSIST command
@@ -255,5 +255,5 @@ func (hts *HashTableStorage) Persist(key string) error {
 	}
 
 	record.Header.SetExpiry(0)
-	return hts.set(hts.ActiveWALFile, key, record.Value, nil)
+	return hts.set(hts.ActiveDataFile, key, record.Value, nil)
 }

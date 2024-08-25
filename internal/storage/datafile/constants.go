@@ -1,4 +1,4 @@
-package wal
+package datafile
 
 const (
 	WAL_FILENAME_PREFIX  = "wal_file_"

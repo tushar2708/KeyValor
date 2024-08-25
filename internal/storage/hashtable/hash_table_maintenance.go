@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/storage/wal"
 	"KeyValor/internal/utils/fileutils"
 )
 
@@ -35,7 +35,7 @@ func (hts *HashTableStorage) maybeRotateActiveFile() error {
 	hts.Lock()
 	defer hts.Unlock()
 
-	size, err := hts.ActiveWALFile.Size()
+	size, err := hts.ActiveDataFile.Size()
 	if err != nil {
 		return err
 	}
@@ -44,16 +44,16 @@ func (hts *HashTableStorage) maybeRotateActiveFile() error {
 		return nil
 	}
 
-	currentFileID := hts.ActiveWALFile.ID()
-	hts.oldWALFilesMap[currentFileID] = hts.ActiveWALFile
+	currentFileID := hts.ActiveDataFile.ID()
+	hts.olddatafileFilesMap[currentFileID] = hts.ActiveDataFile
 
-	// Create a new WAL file.
-	df, err := wal.NewWALFile(hts.Cfg.Directory, currentFileID+1, wal.WAL_MODE_READ_WRITE)
+	// Create a new datafile file.
+	df, err := datafile.NewDataFile(hts.Cfg.Directory, currentFileID+1, datafile.DF_MODE_READ_WRITE)
 	if err != nil {
 		return err
 	}
 
-	hts.ActiveWALFile = df
+	hts.ActiveDataFile = df
 	return nil
 }
 
@@ -104,27 +104,27 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 	tempMergedFilePath := filepath.Join(hts.Cfg.Directory, MERGED_WAL_FILE_NAME_FORMAT)
 
 	/// move all the live records to a new file
-	// force sync merged WAL file
-	err := hts.mergeWalFiles(tempMergedFilePath)
+	// force sync merged datafile file
+	err := hts.mergedatafileFiles(tempMergedFilePath)
 	if err != nil {
 		return err
 	}
 
-	// mergeWalFiles updates the indexes as it merges the files
+	// mergedatafileFiles updates the indexes as it merges the files
 	// so we need to persist those changes
 	if err := hts.persistIndexFile(); err != nil {
 		return err
 	}
 
-	// close all the old WAL files
+	// close all the old datafile files
 	// empty the old files map
-	// delete old WAL files from disk
+	// delete old datafile files from disk
 	err = hts.cleanupOldFiles()
 	if err != nil {
 		return err
 	}
 
-	newActiveFilePath := filepath.Join(hts.Cfg.Directory, fmt.Sprintf(wal.WAL_FILE_NAME_FORMAT, 0))
+	newActiveFilePath := filepath.Join(hts.Cfg.Directory, fmt.Sprintf(datafile.WAL_FILE_NAME_FORMAT, 0))
 
 	// rename the temporary index file to the active index
 	err = os.Rename(tempMergedFilePath, newActiveFilePath)
@@ -139,7 +139,7 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 		return fmt.Errorf("error syncing directory: %w", err)
 	}
 
-	hts.ActiveWALFile, err = wal.NewWALFileWithPath(newActiveFilePath, 0, wal.WAL_MODE_READ_WRITE)
+	hts.ActiveDataFile, err = datafile.NewDataFileWithPath(newActiveFilePath, 0, datafile.DF_MODE_READ_WRITE)
 	if err != nil {
 		return fmt.Errorf("error creating new active file handler: %w", err)
 	}
@@ -147,14 +147,14 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 }
 
 func (hts *HashTableStorage) cleanupOldFiles() error {
-	for _, walFile := range hts.oldWALFilesMap {
-		if err := walFile.Close(); err != nil {
-			fmt.Printf("error closing wal file: %v", err)
+	for _, datafileFile := range hts.olddatafileFilesMap {
+		if err := datafileFile.Close(); err != nil {
+			fmt.Printf("error closing datafile file: %v", err)
 			continue
 		}
 	}
 
-	hts.oldWALFilesMap = make(map[int]*wal.WriteAheadLogRWFile)
+	hts.olddatafileFilesMap = make(map[int]*datafile.ReadWriteDataFile)
 
 	deleteExistingDBFiles := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -167,7 +167,7 @@ func (hts *HashTableStorage) cleanupOldFiles() error {
 			return nil
 		}
 
-		if filepath.Ext(path) == wal.WAL_FILE_EXTENSION {
+		if filepath.Ext(path) == datafile.WAL_FILE_EXTENSION {
 			err = os.Remove(path)
 			if err != nil {
 				return err
@@ -184,8 +184,8 @@ func (hts *HashTableStorage) cleanupOldFiles() error {
 	return nil
 }
 
-func (hts *HashTableStorage) mergeWalFiles(tempMergedFilePath string) error {
-	mergeWalfile, err := wal.NewWALFileWithPath(tempMergedFilePath, 0, wal.WAL_MODE_WRITE_ONLY)
+func (hts *HashTableStorage) mergedatafileFiles(tempMergedFilePath string) error {
+	mergedatafilefile, err := datafile.NewDataFileWithPath(tempMergedFilePath, 0, datafile.DF_MODE_WRITE_ONLY)
 	if err != nil {
 		return err
 	}
@@ -198,19 +198,19 @@ func (hts *HashTableStorage) mergeWalFiles(tempMergedFilePath string) error {
 
 		expiryTimeUnixNano := record.Header.GetExpiry()
 		if expiryTimeUnixNano == 0 {
-			hts.set(mergeWalfile, key, record.Value, nil)
+			hts.set(mergedatafilefile, key, record.Value, nil)
 			return nil
 		}
 
 		var expiryTime = time.Unix(0, expiryTimeUnixNano)
-		return hts.set(mergeWalfile, key, record.Value, &expiryTime)
+		return hts.set(mergedatafilefile, key, record.Value, &expiryTime)
 	})
 
-	err = mergeWalfile.Sync()
+	err = mergedatafilefile.Sync()
 	if err != nil {
 		return fmt.Errorf("error syncing temporary storage file: %w", err)
 	}
-	err = mergeWalfile.Close()
+	err = mergedatafilefile.Close()
 	if err != nil {
 		return fmt.Errorf("error closing temporary storage file: %w", err)
 	}

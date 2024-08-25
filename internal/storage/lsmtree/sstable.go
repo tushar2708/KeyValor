@@ -2,7 +2,7 @@ package lsmtree
 
 import (
 	"KeyValor/internal/records"
-	"KeyValor/internal/storage/wal"
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/treemapgen"
 	"bytes"
 	"fmt"
@@ -14,7 +14,7 @@ import (
 
 type SSTable struct {
 	tableFilePath string
-	tableWalFile  *wal.WriteAheadLogRWFile                                         // underlying file in which sstable is stored
+	tableWalFile  *datafile.ReadWriteDataFile                                      // underlying file in which sstable is stored
 	metaData      *SSTableMetaData                                                 // metadata about SSTable regions
 	sparseIndex   *treemapgen.SerializableTreeMap[string, *records.PositionRecord] // sparse index of the keys in SSTable [key (string) -> Disk (Position)]
 	BufferPool    sync.Pool                                                        // crate an object pool to reuse buffers
@@ -45,7 +45,7 @@ func NewSSTable(filePath string, partSize int) (*SSTable, error) {
 	sst.sparseIndex = treemapgen.NewSerializableTreeMap[string, *records.PositionRecord](utils.StringComparator)
 
 	var err error
-	sst.tableWalFile, err = wal.NewWALFileWithPath(filePath, int(time.Now().UnixMilli()), wal.WAL_MODE_WRITE_ONLY)
+	sst.tableWalFile, err = datafile.NewDataFileWithPath(filePath, int(time.Now().UnixMilli()), datafile.DF_MODE_WRITE_ONLY)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func NewSSTableLoadedFromFile(filePath string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sst.tableWalFile, err = wal.NewWALFileWithPath(filePath, int(time.Now().UnixMilli()), wal.WAL_MODE_READ_ONLY)
+	sst.tableWalFile, err = datafile.NewDataFileWithPath(filePath, int(time.Now().UnixMilli()), datafile.DF_MODE_READ_ONLY)
 	if err != nil {
 		return nil, err
 	}

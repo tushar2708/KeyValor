@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"KeyValor/constants"
+	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/storage/wal"
 )
 
 func (hts *HashTableStorage) getAndValidateMuLocked(key string) ([]byte, error) {
@@ -38,7 +38,8 @@ func (hts *HashTableStorage) get(key string) (storagecommon.DataRecord, error) {
 		return storagecommon.DataRecord{}, err
 	}
 
-	data, err := file.ReadAt(meta.RecordOffset, meta.RecordSize)
+	data := make([]byte, meta.RecordSize)
+	_, err = file.ReadAt(data, meta.RecordOffset)
 	if err != nil {
 		return storagecommon.DataRecord{}, err
 	}
@@ -61,11 +62,11 @@ func (hts *HashTableStorage) get(key string) (storagecommon.DataRecord, error) {
 	return record, nil
 }
 
-func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*wal.WriteAheadLogRWFile, error) {
-	if meta.FileID == hts.ActiveWALFile.ID() {
-		return hts.ActiveWALFile, nil
+func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*datafile.ReadWriteDataFile, error) {
+	if meta.FileID == hts.ActiveDataFile.ID() {
+		return hts.ActiveDataFile, nil
 	}
-	file, ok := hts.oldWALFilesMap[meta.FileID]
+	file, ok := hts.olddatafileFilesMap[meta.FileID]
 	if !ok {
 		return nil, constants.ErrWalFileNotFound
 	}
@@ -74,7 +75,7 @@ func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*wal.W
 }
 
 func (hts *HashTableStorage) set(
-	file *wal.WriteAheadLogRWFile,
+	file *datafile.ReadWriteDataFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
