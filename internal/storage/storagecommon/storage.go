@@ -8,20 +8,17 @@ import (
 	"sync"
 
 	"KeyValor/config"
-	"KeyValor/internal/storage/datafile"
 )
 
 type CommonStorage struct {
 	sync.RWMutex
-	Cfg            *config.DBCfgOpts
-	ActiveDataFile *datafile.ReadWriteDataFile
-	LockFile       *os.File
-	BufferPool     sync.Pool // crate an object pool to reuse buffers
+	Cfg        *config.DBCfgOpts
+	LockFile   *os.File
+	BufferPool sync.Pool // crate an object pool to reuse buffers
 }
 
 func NewCommonStorage(
 	cfg *config.DBCfgOpts,
-	activeWALFile *datafile.ReadWriteDataFile,
 ) (*CommonStorage, error) {
 
 	lockFilePath := filepath.Join(cfg.Directory, LOCKFILE)
@@ -31,9 +28,8 @@ func NewCommonStorage(
 	}
 
 	return &CommonStorage{
-		Cfg:            cfg,
-		ActiveDataFile: activeWALFile,
-		LockFile:       lockFile,
+		Cfg:      cfg,
+		LockFile: lockFile,
 		BufferPool: sync.Pool{
 			New: func() interface{} {
 				return bytes.NewBuffer([]byte{})

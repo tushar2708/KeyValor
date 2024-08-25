@@ -22,6 +22,8 @@ type LSMTreeStorage struct {
 	*storagecommon.CommonStorage
 	bufferPool sync.Pool // crate an object pool to reuse buffers
 
+	ActiveWALFile datafile.AppendOnlyFile
+
 	activeMemTable        *treemapgen.SerializableTreeMap[string, *records.CommandRecord]
 	prevMemTableImmutable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]
 
@@ -33,7 +35,7 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 	memTable := treemapgen.NewSerializableTreeMap[string, *records.CommandRecord](utils.StringComparator)
 
 	// create cs with nil WAL file for now
-	cs, err := storagecommon.NewCommonStorage(cfg, nil)
+	cs, err := storagecommon.NewCommonStorage(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating common storage: %w", err)
 	}
@@ -59,8 +61,8 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 
 	if len(files) == 0 {
 		// we have an empty directory
-		nextIndex := 0
-		lsmTree.ActiveDataFile, err = datafile.NewDataFile(cfg.Directory, nextIndex, datafile.DF_MODE_WRITE_ONLY)
+		currentWalFilePath := filepath.Join(cfg.Directory, CURRENT_WAL_FILE_NAME)
+		lsmTree.ActiveWALFile, err = datafile.NewAppendOnlyDataFileWithPath(currentWalFilePath)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +108,7 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 			if err != nil {
 				continue
 			}
-			lsmt.ActiveDataFile, err = datafile.NewDataFileWithPath(filePath, 0, datafile.DF_MODE_WRITE_ONLY)
+			lsmt.ActiveWALFile, err = datafile.NewAppendOnlyDataFileWithPath(filePath)
 			if err != nil {
 				continue
 			}
@@ -132,7 +134,7 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 
 func (lsmt *LSMTreeStorage) restoreMemtableFromWalFile(filePath string) error {
 
-	walFile, err := datafile.NewDataFileWithPath(filePath, 0, datafile.DF_MODE_READ_ONLY)
+	walFile, err := datafile.NewReadOnlyDataFileWithRandomReadsWithPath(filePath)
 	if err != nil {
 		return err
 	}
@@ -145,43 +147,18 @@ func (lsmt *LSMTreeStorage) restoreMemtableFromWalFile(filePath string) error {
 
 	var currentPos int64 = 0
 
+	encoder := records.NewRecordEncoder[string, *records.CommandHeader, *records.CommandRecord]()
+
 	for currentPos < fileLen {
-		cmdHeader := records.CommandHeader{}
-		headerLen := cmdHeader.GetHeaderLen()
-		cmdHeaderBytes := make([]byte, headerLen)
-		_, err = walFile.Read(cmdHeaderBytes)
+
+		var cmdRecord records.CommandRecord
+
+		err = encoder.DecodeF(&cmdRecord, walFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("unexpected error decoding command record: %w", err)
 		}
 
-		err = cmdHeader.Decode(cmdHeaderBytes)
-		if err != nil {
-			return fmt.Errorf("error decoding command header, %w", err)
-		}
-
-		currentPos += int64(headerLen)
-
-		cmdRecord := &records.CommandRecord{
-			Header: cmdHeader,
-		}
-
-		keyValSize := int(cmdHeader.KeySize + cmdHeader.ValSize)
-
-		cmdKeyVal := make([]byte, keyValSize)
-		_, err = walFile.Read(cmdKeyVal)
-		if err != nil {
-			return fmt.Errorf("errror reading command key+value with length %d, %w",
-				keyValSize, err)
-		}
-
-		currentPos += int64(keyValSize)
-
-		err = cmdRecord.DecodeKeyVal(cmdKeyVal)
-		if err != nil {
-			return fmt.Errorf("error decoding cmd key and value, %w", err)
-		}
-
-		lsmt.activeMemTable.Put(cmdRecord.Key, cmdRecord)
+		lsmt.activeMemTable.Put(cmdRecord.Key, &cmdRecord)
 
 		currentPos = walFile.GetCurrentReadOffset()
 	}

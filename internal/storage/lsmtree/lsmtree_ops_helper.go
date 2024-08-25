@@ -92,7 +92,7 @@ func (lts *LSMTreeStorage) getAppropriateFile(meta storagecommon.Meta) (*datafil
 }
 
 func (lts *LSMTreeStorage) set(
-	wlFile *datafile.ReadWriteDataFile,
+	wlFile datafile.AppendOnlyFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,
@@ -139,7 +139,7 @@ func (lts *LSMTreeStorage) rotateMemTableIndex() error {
 	lts.prevMemTableImmutable = lts.activeMemTable
 	lts.activeMemTable = treemapgen.NewSerializableTreeMap[string, *records.CommandRecord](utils.StringComparator)
 
-	lts.ActiveDataFile.Close()
+	lts.ActiveWALFile.Close()
 
 	currentWalFilePath := filepath.Join(lts.Cfg.Directory, CURRENT_WAL_FILE_NAME)
 	tempWalFilePath := filepath.Join(lts.Cfg.Directory, TEMPORARY_WAL_FILE_NAME)
@@ -156,7 +156,7 @@ func (lts *LSMTreeStorage) rotateMemTableIndex() error {
 		return fmt.Errorf("error renaming current WAL file: %w", err)
 	}
 
-	lts.ActiveDataFile, err = datafile.NewDataFileWithPath(currentWalFilePath, 0, datafile.DF_MODE_WRITE_ONLY)
+	lts.ActiveWALFile, err = datafile.NewAppendOnlyDataFileWithPath(currentWalFilePath)
 	if err != nil {
 		return fmt.Errorf("error creating new active WAL file: %w", err)
 	}

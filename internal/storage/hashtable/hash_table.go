@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"KeyValor/config"
 	"KeyValor/internal/storage/datafile"
@@ -13,17 +15,18 @@ import (
 
 type HashTableStorage struct {
 	*storagecommon.CommonStorage
+	ActiveDataFile      datafile.AppendOnlyWithRandomReads
 	keyLocationIndex    storagecommon.DatabaseIndex
-	olddatafileFilesMap map[int]*datafile.ReadWriteDataFile
+	olddatafileFilesMap map[int]datafile.ReadOnlyWithRandomReads
 }
 
 func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 
 	var (
-		olddatafileFiles = make(map[int]*datafile.ReadWriteDataFile)
+		olddatafileFiles = make(map[int]datafile.ReadOnlyWithRandomReads)
 	)
 
-	_, ids, err := datafile.ListDataFiles(cfg.Directory)
+	_, ids, err := listHashTableDataFiles(cfg.Directory)
 	if err != nil {
 		return nil, err
 	}
@@ -31,15 +34,15 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 	sort.Ints(ids)
 
 	for _, id := range ids {
-		datafileFile, err := datafile.NewDataFile(cfg.Directory, id, datafile.DF_MODE_READ_ONLY)
+		datafile, err := datafile.NewReadOnlyDataFileWithRandomReads(cfg.Directory, HASHTABLE_DATAFILE_NAME_FORMAT, id)
 		if err != nil {
 			return nil, err
 		}
-		olddatafileFiles[id] = datafileFile
+		olddatafileFiles[id] = datafile
 	}
 
 	nextIndex := len(ids) + 1
-	activedatafileFile, err := datafile.NewDataFile(cfg.Directory, nextIndex, datafile.DF_MODE_READ_WRITE)
+	activedatafile, err := datafile.NewAppendOnlyDataFileWithRandomReads(cfg.Directory, HASHTABLE_DATAFILE_NAME_FORMAT, nextIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -53,16 +56,40 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 		}
 	}
 
-	cs, err := storagecommon.NewCommonStorage(cfg, activedatafileFile)
+	cs, err := storagecommon.NewCommonStorage(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating common storage: %w", err)
 	}
 
 	return &HashTableStorage{
 		CommonStorage:       cs,
+		ActiveDataFile:      activedatafile,
 		keyLocationIndex:    keyLocationHash,
 		olddatafileFilesMap: olddatafileFiles,
 	}, nil
+}
+
+func listHashTableDataFiles(directory string) (files []string, ids []int, err error) {
+	files, err = filepath.Glob(fmt.Sprintf("%s/%s", directory, HASHTABLE_DATAFILE_EXTENSION))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ids = make([]int, len(files))
+
+	// store_file_<int>.db
+	for i, file := range files {
+		fileNumber := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(file), HASHTABLE_DATAFILE_EXTENSION), HASHTABLE_DATAFILE_NAME_PREFIX)
+		id, err := strconv.ParseInt(fileNumber, 10, 32)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// fileNameIDMap[file] = int(id)
+		ids[i] = int(id)
+	}
+
+	return files, ids, nil
 }
 
 func (hts *HashTableStorage) Init() error {

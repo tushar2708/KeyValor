@@ -48,7 +48,7 @@ func (hts *HashTableStorage) maybeRotateActiveFile() error {
 	hts.olddatafileFilesMap[currentFileID] = hts.ActiveDataFile
 
 	// Create a new datafile file.
-	df, err := datafile.NewDataFile(hts.Cfg.Directory, currentFileID+1, datafile.DF_MODE_READ_WRITE)
+	df, err := datafile.NewAppendOnlyDataFileWithRandomReads(hts.Cfg.Directory, HASHTABLE_DATAFILE_NAME_FORMAT, currentFileID+1)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 		return err
 	}
 
-	newActiveFilePath := filepath.Join(hts.Cfg.Directory, fmt.Sprintf(datafile.WAL_FILE_NAME_FORMAT, 0))
+	newActiveFilePath := filepath.Join(hts.Cfg.Directory, fmt.Sprintf(HASHTABLE_DATAFILE_NAME_FORMAT, 0))
 
 	// rename the temporary index file to the active index
 	err = os.Rename(tempMergedFilePath, newActiveFilePath)
@@ -139,7 +139,7 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 		return fmt.Errorf("error syncing directory: %w", err)
 	}
 
-	hts.ActiveDataFile, err = datafile.NewDataFileWithPath(newActiveFilePath, 0, datafile.DF_MODE_READ_WRITE)
+	hts.ActiveDataFile, err = datafile.NewAppendOnlyDataFileWithRandomReadsWithPath(newActiveFilePath)
 	if err != nil {
 		return fmt.Errorf("error creating new active file handler: %w", err)
 	}
@@ -154,7 +154,7 @@ func (hts *HashTableStorage) cleanupOldFiles() error {
 		}
 	}
 
-	hts.olddatafileFilesMap = make(map[int]*datafile.ReadWriteDataFile)
+	hts.olddatafileFilesMap = make(map[int]datafile.ReadOnlyWithRandomReads)
 
 	deleteExistingDBFiles := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -167,7 +167,7 @@ func (hts *HashTableStorage) cleanupOldFiles() error {
 			return nil
 		}
 
-		if filepath.Ext(path) == datafile.WAL_FILE_EXTENSION {
+		if filepath.Ext(path) == HASHTABLE_DATAFILE_EXTENSION {
 			err = os.Remove(path)
 			if err != nil {
 				return err
@@ -185,7 +185,7 @@ func (hts *HashTableStorage) cleanupOldFiles() error {
 }
 
 func (hts *HashTableStorage) mergedatafileFiles(tempMergedFilePath string) error {
-	mergedatafilefile, err := datafile.NewDataFileWithPath(tempMergedFilePath, 0, datafile.DF_MODE_WRITE_ONLY)
+	mergedatafilefile, err := datafile.NewAppendOnlyDataFileWithPath(tempMergedFilePath)
 	if err != nil {
 		return err
 	}

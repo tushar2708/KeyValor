@@ -7,17 +7,17 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/emirpasic/gods/utils"
 )
 
 type SSTable struct {
-	tableFilePath string
-	tableWalFile  *datafile.ReadWriteDataFile                                      // underlying file in which sstable is stored
-	metaData      *SSTableMetaData                                                 // metadata about SSTable regions
-	sparseIndex   *treemapgen.SerializableTreeMap[string, *records.PositionRecord] // sparse index of the keys in SSTable [key (string) -> Disk (Position)]
-	BufferPool    sync.Pool                                                        // crate an object pool to reuse buffers
+	tableFilePath   string
+	activeSstFile   datafile.AppendOnlyWithRandomReads                               // underlying file in which sstable is stored
+	readOnlySstFile datafile.ReadOnlyWithRandomReads                                 // underlying file in which sstable is stored
+	metaData        *SSTableMetaData                                                 // metadata about SSTable regions
+	sparseIndex     *treemapgen.SerializableTreeMap[string, *records.PositionRecord] // sparse index of the keys in SSTable [key (string) -> Disk (Position)]
+	BufferPool      sync.Pool                                                        // crate an object pool to reuse buffers
 }
 
 func NewSSTable(filePath string, partSize int) (*SSTable, error) {
@@ -45,7 +45,7 @@ func NewSSTable(filePath string, partSize int) (*SSTable, error) {
 	sst.sparseIndex = treemapgen.NewSerializableTreeMap[string, *records.PositionRecord](utils.StringComparator)
 
 	var err error
-	sst.tableWalFile, err = datafile.NewDataFileWithPath(filePath, int(time.Now().UnixMilli()), datafile.DF_MODE_WRITE_ONLY)
+	sst.activeSstFile, err = datafile.NewAppendOnlyDataFileWithRandomReadsWithPath(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func NewSSTableLoadedFromFile(filePath string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sst.tableWalFile, err = datafile.NewDataFileWithPath(filePath, int(time.Now().UnixMilli()), datafile.DF_MODE_READ_ONLY)
+	sst.readOnlySstFile, err = datafile.NewReadOnlyDataFileWithRandomReadsWithPath(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (sst *SSTable) populateFromIndex(memTable *treemapgen.SerializableTreeMap[s
 		}
 	}
 
-	dataRegionEndCursor := sst.tableWalFile.GetCurrentWriteOffset()
+	dataRegionEndCursor := sst.activeSstFile.GetCurrentWriteOffset()
 	dataRegionLength := dataRegionEndCursor - sst.metaData.DataStartOffset
 	sst.metaData.DataSize = dataRegionLength
 	sst.metaData.IndexStartOffset = dataRegionEndCursor
@@ -124,7 +124,7 @@ func (sst *SSTable) populateFromIndex(memTable *treemapgen.SerializableTreeMap[s
 }
 
 func (sst *SSTable) writeBatch(commandBatch records.CommandBatch) error {
-	startOfBAtch, err := sst.tableWalFile.Size()
+	startOfBAtch, err := sst.activeSstFile.Size()
 	if err != nil {
 		return fmt.Errorf("failed to get current write position %w", err)
 	}
@@ -143,7 +143,7 @@ func (sst *SSTable) writeBatch(commandBatch records.CommandBatch) error {
 	}
 
 	// write to file
-	_, err = sst.tableWalFile.Write(buf.Bytes())
+	_, err = sst.activeSstFile.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}

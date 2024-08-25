@@ -62,7 +62,7 @@ func (hts *HashTableStorage) get(key string) (storagecommon.DataRecord, error) {
 	return record, nil
 }
 
-func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*datafile.ReadWriteDataFile, error) {
+func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (datafile.ReadOnlyWithRandomReads, error) {
 	if meta.FileID == hts.ActiveDataFile.ID() {
 		return hts.ActiveDataFile, nil
 	}
@@ -75,7 +75,7 @@ func (hts *HashTableStorage) getAppropriateFile(meta storagecommon.Meta) (*dataf
 }
 
 func (hts *HashTableStorage) set(
-	file *datafile.ReadWriteDataFile,
+	file datafile.AppendOnlyFile,
 	key string,
 	value []byte,
 	expiryTime *time.Time,

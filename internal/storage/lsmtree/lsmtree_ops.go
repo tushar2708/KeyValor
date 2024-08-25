@@ -99,7 +99,7 @@ func (lts *LSMTreeStorage) Set(key string, value []byte) error {
 		return fmt.Errorf("invalid key or value")
 	}
 
-	return lts.set(lts.ActiveDataFile, key, value, nil)
+	return lts.set(lts.ActiveWALFile, key, value, nil)
 }
 
 // Delete removes a key-value pair from the key-value store.
@@ -178,7 +178,7 @@ func (lts *LSMTreeStorage) Expire(key string, expireTime *time.Time) error {
 	}
 
 	record.Header.SetExpiry(expireTime.UnixNano())
-	return lts.set(lts.ActiveDataFile, key, record.Value, expireTime)
+	return lts.set(lts.ActiveWALFile, key, record.Value, expireTime)
 }
 
 // Redis-compatible INCR command
@@ -247,7 +247,7 @@ func (lts *LSMTreeStorage) SetEx(key string, value []byte, ttlSeconds int64) err
 	defer lts.Unlock()
 
 	expireTime := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-	return lts.set(lts.ActiveDataFile, key, value, &expireTime)
+	return lts.set(lts.ActiveWALFile, key, value, &expireTime)
 }
 
 // Redis-compatible PERSIST command
@@ -261,5 +261,5 @@ func (lts *LSMTreeStorage) Persist(key string) error {
 	}
 
 	record.Header.SetExpiry(0)
-	return lts.set(lts.ActiveDataFile, key, record.Value, nil)
+	return lts.set(lts.ActiveWALFile, key, record.Value, nil)
 }
