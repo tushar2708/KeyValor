@@ -5,16 +5,19 @@ import (
 	"testing"
 )
 
+type EncoderTestCase struct {
+	name              string
+	record            *CommandRecord // Always use pointer here to ensure proper behavior
+	shouldEncode      bool
+	shouldDecode      bool
+	expectDecodeError bool
+	expectEncodeError bool
+}
+
 // TestRecordEncoder tests various encoding and decoding scenarios using RecordEncoder
 func TestRecordEncoder(t *testing.T) {
-	tests := []struct {
-		name              string
-		record            *CommandRecord // Always use pointer here to ensure proper behavior
-		shouldEncode      bool
-		shouldDecode      bool
-		expectDecodeError bool
-		expectEncodeError bool
-	}{
+
+	tests := []EncoderTestCase{
 		{
 			name: "Valid Encoding and Decoding",
 			record: &CommandRecord{
@@ -84,25 +87,9 @@ func TestRecordEncoder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.shouldEncode && tt.record != nil {
-				// Test encoding
-				buff := &bytes.Buffer{}
-				err := encoder.Encode(tt.record, buff)
-				if (err != nil) != tt.expectEncodeError {
-					t.Errorf("Encode() error = %v, expectEncodeError %v", err, tt.expectEncodeError)
-				}
-				if err == nil && !tt.expectDecodeError {
-					// Test decoding from buffer
-					decodedRecord := &CommandRecord{Header: CommandHeader{}}
-					err = encoder.Decode(decodedRecord, buff.Bytes())
-					if (err != nil) != tt.expectDecodeError {
-						t.Errorf("Decode() error = %v, expectDecodeError %v", err, tt.expectDecodeError)
-					}
-					if err == nil && !tt.expectDecodeError {
-						if decodedRecord.Key != tt.record.Key || string(decodedRecord.Value) != string(tt.record.Value) {
-							t.Errorf("Decoded record does not match, got = %v, want = %v", decodedRecord, tt.record)
-						}
-					}
-				}
+				// Test encoding & decoding from buffer
+				runTestsUsingBuffer(t, tt, encoder)
+				runTestsUsingReaderWriter(t, tt, encoder)
 			}
 
 			// Test invalid non-pointer usage for decoding
@@ -114,27 +101,48 @@ func TestRecordEncoder(t *testing.T) {
 				}
 			}
 
-			// Test encoding to and decoding from io.Reader/io.Writer
-			if tt.shouldDecode && tt.record != nil {
-				buff := &bytes.Buffer{}
-				err := encoder.EncodeF(tt.record, buff)
-				if (err != nil) != tt.expectEncodeError {
-					t.Errorf("EncodeF() error = %v, expectEncodeError %v", err, tt.expectEncodeError)
-				}
-				if err == nil && !tt.expectDecodeError {
-					decodedRecord := &CommandRecord{Header: CommandHeader{}}
-					err = encoder.DecodeF(decodedRecord, buff)
-					if (err != nil) != tt.expectDecodeError {
-						t.Errorf("DecodeF() error = %v, expectDecodeError %v", err, tt.expectDecodeError)
-					}
-					if err == nil && !tt.expectDecodeError {
-						if decodedRecord.Key != tt.record.Key || string(decodedRecord.Value) != string(tt.record.Value) {
-							t.Errorf("Decoded record from io.Reader does not match, got = %v, want = %v", decodedRecord, tt.record)
-						}
-					}
-				}
-			}
 		})
+	}
+}
+
+func runTestsUsingReaderWriter(t *testing.T, tt EncoderTestCase, encoder *RecordEncoder[string, *CommandHeader, *CommandRecord]) {
+	buff := &bytes.Buffer{}
+	err := encoder.EncodeF(tt.record, buff)
+	if (err != nil) != tt.expectEncodeError {
+		t.Errorf("EncodeF() error = %v, expectEncodeError %v", err, tt.expectEncodeError)
+	}
+	if err == nil && !tt.expectDecodeError {
+		decodedRecord := &CommandRecord{Header: CommandHeader{}}
+		err = encoder.DecodeF(decodedRecord, buff)
+		if (err != nil) != tt.expectDecodeError {
+			t.Errorf("DecodeF() error = %v, expectDecodeError %v", err, tt.expectDecodeError)
+		}
+		if err == nil && !tt.expectDecodeError {
+			if decodedRecord.Key != tt.record.Key || string(decodedRecord.Value) != string(tt.record.Value) {
+				t.Errorf("Decoded record from io.Reader does not match, got = %v, want = %v", decodedRecord, tt.record)
+			}
+		}
+	}
+}
+
+func runTestsUsingBuffer(t *testing.T, tt EncoderTestCase, encoder *RecordEncoder[string, *CommandHeader, *CommandRecord]) {
+	buff := &bytes.Buffer{}
+	err := encoder.Encode(tt.record, buff)
+	if (err != nil) != tt.expectEncodeError {
+		t.Errorf("Encode() error = %v, expectEncodeError %v", err, tt.expectEncodeError)
+	}
+	if err == nil && !tt.expectDecodeError {
+
+		decodedRecord := &CommandRecord{Header: CommandHeader{}}
+		err = encoder.Decode(decodedRecord, buff.Bytes())
+		if (err != nil) != tt.expectDecodeError {
+			t.Errorf("Decode() error = %v, expectDecodeError %v", err, tt.expectDecodeError)
+		}
+		if err == nil && !tt.expectDecodeError {
+			if decodedRecord.Key != tt.record.Key || string(decodedRecord.Value) != string(tt.record.Value) {
+				t.Errorf("Decoded record does not match, got = %v, want = %v", decodedRecord, tt.record)
+			}
+		}
 	}
 }
 
