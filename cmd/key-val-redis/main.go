@@ -1,17 +1,18 @@
 package main
 
 import (
-	"KeyValor"
-	"KeyValor/cmd/key-val-redis/commands"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/tidwall/redcon"
+
+	"KeyValor"
+	"KeyValor/cmd/key-val-redis/commands"
+	"KeyValor/log"
 )
 
 var addr = ":6379"
@@ -24,6 +25,9 @@ func main() {
 
 	homeDir, _ := os.UserHomeDir()
 	keyValurStoreDir := filepath.Join(homeDir, "keyvalor")
+	logDir := filepath.Join(homeDir, "keyvalorlogs")
+	log.InitLogger(logDir)
+
 	os.MkdirAll(keyValurStoreDir, fs.ModePerm)
 	db, err := KeyValor.NewKeyValorDB(KeyValor.WithDirectory(keyValurStoreDir))
 	if err != nil {
@@ -54,12 +58,12 @@ func main() {
 		},
 		func(conn redcon.Conn, err error) {
 			// This is called when the connection has been closed
-			log.Printf("closed: %s, err: %v", conn.RemoteAddr(), err)
-			log.Println("closing key-value store")
+			log.Infof("closed: %s, err: %v", conn.RemoteAddr(), err)
+			log.Infof("closing key-value store")
 			db.Shutdown()
 		},
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("%v", err)
 	}
 }

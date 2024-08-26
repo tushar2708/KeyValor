@@ -9,6 +9,7 @@ import (
 	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/utils/fileutils"
+	"KeyValor/log"
 )
 
 func (hts *HashTableStorage) persistIndexFile() error {
@@ -149,7 +150,7 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 func (hts *HashTableStorage) cleanupOldFiles() error {
 	for _, datafileFile := range hts.olddatafileFilesMap {
 		if err := datafileFile.Close(); err != nil {
-			fmt.Printf("error closing datafile file: %v", err)
+			log.Errorf("error closing datafile file: %v", err)
 			continue
 		}
 	}

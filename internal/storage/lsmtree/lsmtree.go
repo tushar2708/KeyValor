@@ -16,6 +16,7 @@ import (
 	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/treemapgen"
+	"KeyValor/log"
 )
 
 type LSMTreeStorage struct {
@@ -55,7 +56,7 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 	// iterate over all the files in the directory
 	files, err := os.ReadDir(cfg.Directory)
 	if err != nil {
-		fmt.Printf("Error reading directory: %v\n", err)
+		log.Errorf("Error reading directory: %v\n", err)
 		return nil, err
 	}
 
@@ -87,7 +88,7 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 
 	for _, dirEntry := range files {
 		if dirEntry.IsDir() {
-			fmt.Printf("found a directory, skipping: %s\n", dirEntry.Name())
+			log.Errorf("found a directory, skipping: %s\n", dirEntry.Name())
 			continue
 		}
 
@@ -117,13 +118,13 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 			fileNumber := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(filePath), SSTABLE_FILE_EXTENSION), SSTABLE_FILE_PREFIX)
 			timeStamp, err := strconv.ParseInt(fileNumber, 10, 32)
 			if err != nil {
-				fmt.Printf("Error fetching timestamp from SST file, error: %w", err)
+				log.Errorf("Error fetching timestamp from SST file, error: %w", err)
 				continue
 			}
 
 			ssTable, err := NewSSTableLoadedFromFile(filePath)
 			if err != nil {
-				fmt.Printf("Error loading SSTable from sst file: %w", err)
+				log.Errorf("Error loading SSTable from sst file: %w", err)
 				continue
 			}
 			ssTableTreeMap.Put(timeStamp, ssTable)

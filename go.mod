@@ -6,6 +6,7 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/redcon v1.6.2
+	go.uber.org/zap v1.27.0
 	golang.org/x/sys v0.24.0
 )
 
@@ -14,5 +15,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

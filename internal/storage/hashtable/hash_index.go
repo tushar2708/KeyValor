@@ -2,11 +2,11 @@ package hashtable
 
 import (
 	"encoding/gob"
-	"fmt"
 	"os"
 
 	"KeyValor/constants"
 	"KeyValor/internal/storage/storagecommon"
+	"KeyValor/log"
 )
 
 // HashTableIndex implements a Log structured HashMap's index
@@ -80,7 +80,7 @@ func (lsi *HashTableIndex) DumpToFile(filePath string) error {
 func (lsi *HashTableIndex) Map(f func(key string, metaData storagecommon.Meta) error) {
 	for key, value := range lsi.hashMap {
 		if err := f(key, value); err != nil {
-			fmt.Printf("error in Map, err: %v", err)
+			log.Errorf("error in Map, err: %v", err)
 		}
 	}
 }
