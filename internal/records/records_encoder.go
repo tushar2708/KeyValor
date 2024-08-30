@@ -7,6 +7,7 @@ import (
 	"reflect"
 )
 
+//go:generate go run ../../cmd/tools/serialization_checker/main.go
 type Header interface {
 	GetHeaderLen() int
 	GetKeySize() int
