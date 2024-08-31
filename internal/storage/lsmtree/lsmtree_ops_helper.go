@@ -35,60 +35,77 @@ func (lts *LSMTreeStorage) getAndValidateMuLocked(key string) ([]byte, error) {
 }
 
 func (lts *LSMTreeStorage) get(key string) (storagecommon.DataRecord, error) {
-	/*
-	   meta, err := lts.keyLocationIndex.Get(key)
 
-	   	if err != nil {
-	   		return storagecommon.Record{}, err
-	   	}
+	lts.RLock()
+	defer lts.RUnlock()
 
-	   file, err := lts.getAppropriateFile(meta)
+	// 1. first try finding the key in the active memTable
+	command, found := lts.activeMemTable.Get(key)
+	if found && command != nil {
+		return handleFoundCommand(command)
+	}
 
-	   	if err != nil {
-	   		return storagecommon.Record{}, err
-	   	}
+	// 2. first try finding the key in the previous (now immutable) memTable
+	command, found = lts.prevMemTableImmutable.Get(key)
+	if found && command != nil {
+		return handleFoundCommand(command)
+	}
 
-	   data, err := file.Read(meta.RecordOffset, meta.RecordSize)
+	// 3. TODO: Check in a bloom filter to know if we have ever seen this key
 
-	   	if err != nil {
-	   		return storagecommon.Record{}, err
-	   	}
+	// 4. Check in all the SSTables
+	var err error
 
-	   var header storagecommon.Header
+	for _, ssTable := range lts.ssTables {
+		command, err = ssTable.Query(key)
+		if err == nil && command != nil {
+			break
+		}
+	}
 
-	   	if err := header.Decode(data); err != nil {
-	   		return storagecommon.Record{}, fmt.Errorf("error decoding record header: %w", err)
-	   	}
+	if err == nil && command != nil {
+		return handleFoundCommand(command)
+	}
 
-	   // structure of record :
-	   // <HEADER> | <VALUE>
-	   valueOffset := meta.RecordSize - int(header.GetValueSize())
-	   value := data[valueOffset:]
-
-	   	record := storagecommon.Record{
-	   		Header: header,
-	   		Key:    key,
-	   		Value:  value,
-	   	}
-
-	   return record, nil
-	*/
-	return storagecommon.DataRecord{}, nil
+	return storagecommon.DataRecord{}, constants.ErrKeyMissing
 }
 
-func (lts *LSMTreeStorage) getAppropriateFile(meta storagecommon.Meta) (*datafile.ReadWriteDataFile, error) {
-	/*
-		if meta.FileID == lts.ActiveWALFile.ID() {
-			return lts.ActiveWALFile, nil
-		}
-		file, ok := lts.oldWALFilesMap[meta.FileID]
-		if !ok {
-			return nil, constants.ErrWalFileNotFound
-		}
+func handleFoundCommand(command *records.CommandRecord) (storagecommon.DataRecord, error) {
+	data, err := commandToDataRecord(command)
+	if err == nil {
+		return *data, nil
+	}
+	if err == constants.ErrKeyIsDeleted {
+		return storagecommon.DataRecord{}, constants.ErrKeyMissing
+	}
 
-		return file, nil
-	*/
-	return nil, nil
+	return storagecommon.DataRecord{}, err
+}
+
+func commandToDataRecord(command *records.CommandRecord) (*storagecommon.DataRecord, error) {
+
+	if command == nil {
+		return nil, constants.ErrKeyMissing
+	}
+
+	if command.Header.CmdType == records.Del {
+		return nil, constants.ErrKeyIsDeleted
+	}
+
+	if command.Header.CmdType == records.Set {
+		return &storagecommon.DataRecord{
+			Header: storagecommon.Header{
+				Crc:     0,
+				Ts:      0,
+				Expiry:  command.Header.GetExpiry(),
+				KeySize: command.Header.KeySize,
+				ValSize: command.Header.ValSize,
+			},
+			Key:   command.Key,
+			Value: command.Value,
+		}, nil
+	}
+	panic(fmt.Sprintf("invalid command found, cmd:[%+v]", command))
 }
 
 func (lts *LSMTreeStorage) set(
@@ -127,7 +144,6 @@ func (lts *LSMTreeStorage) set(
 
 	if lts.activeMemTable.Size() >= int(lts.Cfg.MaxActiveFileSize) {
 		lts.rotateMemTableIndex()
-		lts.persistPreviousMemtableToSSTable()
 	}
 	return nil
 }
@@ -161,6 +177,11 @@ func (lts *LSMTreeStorage) rotateMemTableIndex() error {
 		return fmt.Errorf("error creating new active WAL file: %w", err)
 	}
 
+	err = lts.persistMemtableToSSTable(lts.prevMemTableImmutable)
+	if err != nil {
+		return fmt.Errorf("failed to persist immutable memtable to SSTable: %w", err)
+	}
+
 	// sync storage diretory to persist all the above changes
 	// (especially file deletion and rename operations)
 	err = fileutils.SyncFile(lts.Cfg.Directory)
@@ -174,14 +195,14 @@ func SSTFileName(directory string) string {
 	return filepath.Join(directory, fmt.Sprintf(SSTABLE_FILE_NAME_FORMAT, time.Now().UnixNano()))
 }
 
-func (lts *LSMTreeStorage) persistPreviousMemtableToSSTable() error {
+func (lts *LSMTreeStorage) persistMemtableToSSTable(memTable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]) error {
 
 	sstFilePath := SSTFileName(lts.Cfg.Directory)
 	// sstWalFile, err := wal.NewWALFileWithPath(sstFilePath, 0, wal.WAL_MODE_WRITE_ONLY)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	ssTable, err := NewSSTableFromIndex(sstFilePath, SSTABLE_BATCH_SIZE, lts.prevMemTableImmutable)
+	ssTable, err := NewSSTableFromIndex(sstFilePath, SSTABLE_BATCH_SIZE, memTable)
 	if err != nil {
 		return err
 	}

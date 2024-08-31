@@ -4,7 +4,7 @@ import "io"
 
 type ReadOnlyWithRandomReads interface {
 	ReadFileUtilities
-	io.ReadCloser
+	io.ReadSeekCloser
 	io.ReaderAt
 }
 

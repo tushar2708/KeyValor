@@ -28,6 +28,7 @@ type SomeValueHeader struct {
 	ValSize int32
 }
 
+// SomeValueRecord is a sample record type, for testing purposes
 type SomeValueRecord struct {
 	Header SomeValueHeader
 	Key    int64

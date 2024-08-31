@@ -86,6 +86,8 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 
 func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 
+	ssTableTreeMap := treemapgen.NewTreeMap[int64, *SSTable](utils.Int64Comparator)
+
 	for _, dirEntry := range files {
 		if dirEntry.IsDir() {
 			log.Errorf("found a directory, skipping: %s\n", dirEntry.Name())
@@ -93,42 +95,58 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 		}
 
 		fileName := dirEntry.Name()
-		filePath := filepath.Join(lsmt.Cfg.Directory, fileName)
 
-		// ssTableTreeMap := treemap.NewWithStringComparator()
-		ssTableTreeMap := treemapgen.NewTreeMap[int64, *SSTable](utils.Int64Comparator)
-
-		if fileName == TEMPORARY_WAL_FILE_NAME {
-			// load the treemap from the WAL file
-			err := lsmt.restoreMemtableFromWalFile(filePath)
-			if err != nil {
-				continue
-			}
-		} else if fileName == CURRENT_WAL_FILE_NAME {
-			err := lsmt.restoreMemtableFromWalFile(filePath)
-			if err != nil {
-				continue
-			}
-			lsmt.ActiveWALFile, err = datafile.NewAppendOnlyDataFileWithPath(filePath)
-			if err != nil {
-				continue
-			}
-		} else if filepath.Ext(filePath) == SSTABLE_FILE_EXTENSION {
-			//it's an SST file (SSTable)
-			fileNumber := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(filePath), SSTABLE_FILE_EXTENSION), SSTABLE_FILE_PREFIX)
-			timeStamp, err := strconv.ParseInt(fileNumber, 10, 32)
-			if err != nil {
-				log.Errorf("Error fetching timestamp from SST file, error: %w", err)
-				continue
-			}
-
-			ssTable, err := NewSSTableLoadedFromFile(filePath)
-			if err != nil {
-				log.Errorf("Error loading SSTable from sst file: %w", err)
-				continue
-			}
-			ssTableTreeMap.Put(timeStamp, ssTable)
+		err := lsmt.processFile(fileName, ssTableTreeMap)
+		if err != nil {
+			log.Errorf("error processing file: %v\n", err)
+			return err
 		}
+	}
+
+	// store all the SS tables in the increasing order of their creation time
+	lsmt.ssTables = ssTableTreeMap.Values()
+
+	return nil
+}
+
+func (lsmt *LSMTreeStorage) processFile(fileName string, ssTableTreeMap *treemapgen.TreeMap[int64, *SSTable]) error {
+
+	filePath := filepath.Join(lsmt.Cfg.Directory, fileName)
+
+	if fileName == TEMPORARY_WAL_FILE_NAME {
+		// load the treemap from the WAL file
+		err := lsmt.restoreMemtableFromWalFile(filePath)
+		if err != nil {
+			return err
+		}
+	} else if fileName == CURRENT_WAL_FILE_NAME {
+		// load the treemap from the WAL file
+		err := lsmt.restoreMemtableFromWalFile(filePath)
+		if err != nil {
+			return err
+		}
+		lsmt.ActiveWALFile, err = datafile.NewAppendOnlyDataFileWithPath(filePath)
+		if err != nil {
+			return err
+		}
+	} else if filepath.Ext(filePath) == SSTABLE_FILE_EXTENSION {
+		//it's an SST file (SSTable)
+		fileNumber := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(filePath), SSTABLE_FILE_EXTENSION), SSTABLE_FILE_PREFIX)
+		timeStamp, err := strconv.ParseInt(fileNumber, 10, 32)
+		if err != nil {
+			log.Errorf("Error fetching timestamp from SST file, error: %w", err)
+			return err
+		}
+
+		ssTable, err := NewSSTableLoadedFromFile(filePath)
+		if err != nil {
+			log.Errorf("Error loading SSTable from sst file: %w", err)
+			return err
+		}
+
+		log.Infof("loaded SSTable from file: %s, [metadata: %+v]", filePath, ssTable.metaData)
+
+		ssTableTreeMap.Put(timeStamp, ssTable)
 	}
 	return nil
 }

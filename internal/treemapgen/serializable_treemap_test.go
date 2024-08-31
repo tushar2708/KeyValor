@@ -2,6 +2,7 @@ package treemapgen
 
 import (
 	"KeyValor/internal/records"
+	"bytes"
 	"testing"
 
 	"github.com/emirpasic/gods/utils"
@@ -18,13 +19,14 @@ func TestSerializableTreeMapEncodeAndDecodeComplexTypes(t *testing.T) {
 	tm.Put("three", records.NewSetCommandRecord("three", []byte("value3")))
 
 	// Encode the TreeMap
-	encodedBytes, err := tm.Encode()
+	var encodedBytes *bytes.Buffer
+	err := tm.Encode(encodedBytes)
 	require.NoError(t, err)
 
 	decodedMap := NewSerializableTreeMap[string, *records.CommandRecord](utils.StringComparator)
 
 	// Decode the TreeMap
-	err = decodedMap.Decode(encodedBytes)
+	err = decodedMap.Decode(encodedBytes.Bytes())
 	require.NoError(t, err)
 
 	require.Equal(t, 3, decodedMap.Size())

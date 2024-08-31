@@ -14,7 +14,7 @@ type TreeMapIterator[K any, V any] struct {
 
 // Iterator returns a new TreeMapIterator for the TreeMap
 func (tm *SerializableTreeMap[K, V]) Iterator() *TreeMapIterator[K, V] {
-	return &TreeMapIterator[K, V]{iterator: tm.InternalMap.Iterator()}
+	return &TreeMapIterator[K, V]{iterator: tm.internalMap.Iterator()}
 }
 
 // Next moves the iterator to the next element

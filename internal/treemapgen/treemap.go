@@ -10,7 +10,7 @@ import (
 
 // TreeMap is a generic wrapper around treemap.Map to add type safety
 type TreeMap[K comparable, V any] struct {
-	InternalMap *treemap.Map
+	internalMap *treemap.Map
 	keyType     reflect.Type
 	valueType   reflect.Type
 }
@@ -18,7 +18,7 @@ type TreeMap[K comparable, V any] struct {
 // NewTreeMap creates a new TreeMap with type safety
 func NewTreeMap[K comparable, V any](comparator utils.Comparator) *TreeMap[K, V] {
 	return &TreeMap[K, V]{
-		InternalMap: treemap.NewWith(comparator),
+		internalMap: treemap.NewWith(comparator),
 		keyType:     reflect.TypeOf((*K)(nil)).Elem(),
 		valueType:   reflect.TypeOf((*V)(nil)).Elem(),
 	}
@@ -32,11 +32,11 @@ func (tm *TreeMap[K, V]) Put(key K, value V) {
 	if reflect.TypeOf(value) != tm.valueType {
 		panic(fmt.Sprintf("value type mismatch: expected %v, got %v", tm.valueType, reflect.TypeOf(value)))
 	}
-	tm.InternalMap.Put(key, value)
+	tm.internalMap.Put(key, value)
 }
 
 func (tm *TreeMap[K, V]) Size() int {
-	return tm.InternalMap.Size()
+	return tm.internalMap.Size()
 }
 
 // Get retrieves a value for the given key with type checking
@@ -44,7 +44,7 @@ func (tm *TreeMap[K, V]) Get(key K) (V, bool) {
 	if reflect.TypeOf(key) != tm.keyType {
 		panic(fmt.Sprintf("key type mismatch: expected %v, got %v", tm.keyType, reflect.TypeOf(key)))
 	}
-	value, found := tm.InternalMap.Get(key)
+	value, found := tm.internalMap.Get(key)
 	if !found {
 		var zero V
 		return zero, false
@@ -63,4 +63,19 @@ func (tm *TreeMap[K, V]) Get(key K) (V, bool) {
 		panic(fmt.Sprintf("value type mismatch: expected %v, got %v", tm.valueType, reflect.TypeOf(value)))
 	}
 	return typedValue, true
+}
+
+func (tm *TreeMap[K, V]) Values() []V {
+	values := make([]V, 0, tm.Size())
+
+	for i, value := range tm.internalMap.Values() {
+		typedValue, ok := value.(V)
+		if !ok {
+			panic(fmt.Sprintf("value type mismatch: expected %v, got %v", tm.valueType, reflect.TypeOf(value)))
+		}
+
+		values[i] = typedValue
+
+	}
+	return values
 }

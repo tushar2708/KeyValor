@@ -7,6 +7,7 @@ type AppendOnlyWithRandomReads interface {
 	WriteFileUtiities
 	io.ReadWriteCloser
 	io.ReaderAt
+	io.Seeker
 }
 
 func NewAppendOnlyDataFileWithRandomReadsWithPath(filePath string) (AppendOnlyWithRandomReads, error) {

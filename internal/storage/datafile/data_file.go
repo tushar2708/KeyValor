@@ -169,6 +169,19 @@ func (rwdf *ReadWriteDataFile) ReadAt(record []byte, pos int64) (int, error) {
 	return n, nil
 }
 
+func (rwdf *ReadWriteDataFile) Seek(offset int64, whence int) (int64, error) {
+	rwdf.Lock()
+	defer rwdf.Unlock()
+
+	newOffset, err := rwdf.reader.Seek(offset, whence)
+	if err != nil {
+		return newOffset, fmt.Errorf("error seeking in file: %w", err)
+	}
+	rwdf.readOffset = newOffset
+
+	return newOffset, nil
+}
+
 func (rwdf *ReadWriteDataFile) Close() error {
 	rwdf.Lock()
 	defer rwdf.Unlock()
