@@ -2,11 +2,10 @@ package lsmtree
 
 import (
 	"fmt"
-	"regexp"
 	"time"
 
+	"KeyValor/constants"
 	"KeyValor/dbops"
-	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/utils/dataconvutils"
 	"KeyValor/internal/utils/timeutils"
 )
@@ -78,7 +77,7 @@ func (lts *LSMTreeStorage) Exists(key string) bool {
 	// defer lts.RUnlock()
 	// _, err := lts.keyLocationIndex.Get(key)
 	// return err == nil
-	panic("not implemented")
+	panic(constants.NotImplemented)
 }
 
 // Set inserts or updates a key-value pair in the key-value store.
@@ -112,60 +111,21 @@ func (lts *LSMTreeStorage) Set(key string, value []byte) error {
 //   - An error if there is an issue writing to the database or if the key is missing.
 //     Otherwise, it returns nil.
 func (lts *LSMTreeStorage) Delete(key string) error {
-	// lts.Lock()
-	// defer lts.Unlock()
+	lts.Lock()
+	defer lts.Unlock()
 
-	// // write a tombstone to the database
-	// if err := lts.set(lts.ActiveWALFile, key, []byte{}, nil); err != nil {
-	// 	return err
-	// }
-
-	// // delete the value from in-memory index
-	// lts.keyLocationIndex.Delete(key)
-	// return nil
-	panic("not implemented")
-
+	if err := lts.del(lts.ActiveWALFile, key); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (lts *LSMTreeStorage) AllKeys() ([]string, error) {
-	// lts.RLock()
-	// defer lts.RUnlock()
-
-	// return keysMatchingRegex(lts.keyLocationIndex, "*")
-	panic("not implemented")
-
+	panic(constants.NotImplemented)
 }
 
 func (lts *LSMTreeStorage) Keys(regex string) ([]string, error) {
-	// lts.RLock()
-	// defer lts.RUnlock()
-
-	// return keysMatchingRegex(lts.keyLocationIndex, regex)
-	panic("not implemented")
-}
-
-func keysMatchingRegex(dbIndex storagecommon.DatabaseIndex, pattern string) ([]string, error) {
-	// Compile the regex pattern
-	var re *regexp.Regexp
-	var err error
-	if pattern != "*" {
-		re, err = regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("invalid regex pattern: %w", err)
-		}
-	}
-
-	var matchingKeys []string
-
-	// Iterate over the map and add matching keys to the slice
-	dbIndex.Map(func(key string, metaData storagecommon.Meta) error {
-		if pattern == "*" || re.MatchString(key) {
-			matchingKeys = append(matchingKeys, key)
-		}
-		return nil
-	})
-
-	return matchingKeys, nil
+	panic(constants.NotImplemented)
 }
 
 func (lts *LSMTreeStorage) Expire(key string, expireTime *time.Time) error {

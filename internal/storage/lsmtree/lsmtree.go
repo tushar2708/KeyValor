@@ -13,6 +13,7 @@ import (
 
 	"KeyValor/config"
 	"KeyValor/internal/records"
+	"KeyValor/internal/sstable"
 	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/treemapgen"
@@ -28,7 +29,7 @@ type LSMTreeStorage struct {
 	activeMemTable        *treemapgen.SerializableTreeMap[string, *records.CommandRecord]
 	prevMemTableImmutable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]
 
-	ssTables []*SSTable
+	ssTables []*sstable.SSTable
 }
 
 func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
@@ -49,7 +50,7 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 			},
 		},
 		activeMemTable:        memTable,
-		ssTables:              make([]*SSTable, 0),
+		ssTables:              make([]*sstable.SSTable, 0),
 		prevMemTableImmutable: nil,
 	}
 
@@ -86,7 +87,7 @@ func NewLSMTreeStorage(cfg *config.DBCfgOpts) (*LSMTreeStorage, error) {
 
 func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 
-	ssTableTreeMap := treemapgen.NewTreeMap[int64, *SSTable](utils.Int64Comparator)
+	ssTableTreeMap := treemapgen.NewTreeMap[int64, *sstable.SSTable](utils.Int64Comparator)
 
 	for _, dirEntry := range files {
 		if dirEntry.IsDir() {
@@ -109,7 +110,10 @@ func (lsmt *LSMTreeStorage) processExistingFiles(files []fs.DirEntry) error {
 	return nil
 }
 
-func (lsmt *LSMTreeStorage) processFile(fileName string, ssTableTreeMap *treemapgen.TreeMap[int64, *SSTable]) error {
+func (lsmt *LSMTreeStorage) processFile(
+	fileName string,
+	ssTableTreeMap *treemapgen.TreeMap[int64, *sstable.SSTable],
+) error {
 
 	filePath := filepath.Join(lsmt.Cfg.Directory, fileName)
 
@@ -138,13 +142,13 @@ func (lsmt *LSMTreeStorage) processFile(fileName string, ssTableTreeMap *treemap
 			return err
 		}
 
-		ssTable, err := NewSSTableLoadedFromFile(filePath)
+		ssTable, err := sstable.NewSSTableLoadedFromFile(filePath)
 		if err != nil {
 			log.Errorf("Error loading SSTable from sst file: %w", err)
 			return err
 		}
 
-		log.Infof("loaded SSTable from file: %s, [metadata: %+v]", filePath, ssTable.metaData)
+		log.Infof("loaded SSTable from file: %s, [metadata: %+v]", filePath, ssTable.GetMetaData())
 
 		ssTableTreeMap.Put(timeStamp, ssTable)
 	}

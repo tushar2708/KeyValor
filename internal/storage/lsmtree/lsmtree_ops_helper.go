@@ -9,6 +9,7 @@ import (
 
 	"KeyValor/constants"
 	"KeyValor/internal/records"
+	"KeyValor/internal/sstable"
 	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/treemapgen"
@@ -115,13 +116,30 @@ func (lts *LSMTreeStorage) set(
 	expiryTime *time.Time,
 ) error {
 
-	// cmdHeader := NewCommandHeader(Set, key, value)
 	cmdRecord := records.NewSetCommandRecord(key, value)
 
 	if expiryTime != nil {
 		cmdRecord.Header.SetExpiry(expiryTime.UnixNano())
 	}
 
+	return lts.runMutateCommand(wlFile, key, cmdRecord)
+}
+
+func (lts *LSMTreeStorage) del(
+	wlFile datafile.AppendOnlyFile,
+	key string,
+) error {
+
+	cmdRecord := records.NewDelCommandRecord(key)
+
+	return lts.runMutateCommand(wlFile, key, cmdRecord)
+}
+
+func (lts *LSMTreeStorage) runMutateCommand(
+	wlFile datafile.AppendOnlyFile,
+	key string,
+	cmdRecord *records.CommandRecord,
+) error {
 	buf := lts.BufferPool.Get().(*bytes.Buffer)
 
 	// return the buffer to the pool
@@ -195,14 +213,12 @@ func SSTFileName(directory string) string {
 	return filepath.Join(directory, fmt.Sprintf(SSTABLE_FILE_NAME_FORMAT, time.Now().UnixNano()))
 }
 
-func (lts *LSMTreeStorage) persistMemtableToSSTable(memTable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]) error {
+func (lts *LSMTreeStorage) persistMemtableToSSTable(
+	memTable *treemapgen.SerializableTreeMap[string, *records.CommandRecord],
+) error {
 
 	sstFilePath := SSTFileName(lts.Cfg.Directory)
-	// sstWalFile, err := wal.NewWALFileWithPath(sstFilePath, 0, wal.WAL_MODE_WRITE_ONLY)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	ssTable, err := NewSSTableFromIndex(sstFilePath, SSTABLE_BATCH_SIZE, memTable)
+	ssTable, err := sstable.NewSSTableFromIndex(sstFilePath, SSTABLE_BATCH_SIZE, memTable)
 	if err != nil {
 		return err
 	}

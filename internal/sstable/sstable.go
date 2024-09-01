@@ -1,4 +1,4 @@
-package lsmtree
+package sstable
 
 import (
 	"KeyValor/constants"
@@ -102,6 +102,10 @@ func NewSSTableLoadedFromFile(filePath string) (*SSTable, error) {
 
 	return sst, nil
 
+}
+
+func (sst *SSTable) GetMetaData() *SSTableMetaData {
+	return sst.metaData
 }
 
 func (sst *SSTable) populateFromIndex(memTable *treemapgen.SerializableTreeMap[string, *records.CommandRecord]) error {

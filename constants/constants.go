@@ -10,4 +10,6 @@ const (
 	MaxKeySize = 1 * GB
 	// MaxValueSize is the maximum value size that is allowed
 	MaxValueSize = 4 * GB
+
+	NotImplemented = "not implemented"
 )

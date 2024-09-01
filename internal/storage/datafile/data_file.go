@@ -173,6 +173,9 @@ func (rwdf *ReadWriteDataFile) Seek(offset int64, whence int) (int64, error) {
 	rwdf.Lock()
 	defer rwdf.Unlock()
 
+	strictchecks.MustBeTrueOrPanic(rwdf.mode != DF_MODE_WRITE_ONLY,
+		"seek not allowed in write-only mode (BUG)")
+
 	newOffset, err := rwdf.reader.Seek(offset, whence)
 	if err != nil {
 		return newOffset, fmt.Errorf("error seeking in file: %w", err)

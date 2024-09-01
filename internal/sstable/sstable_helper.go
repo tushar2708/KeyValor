@@ -1,4 +1,4 @@
-package lsmtree
+package sstable
 
 import (
 	"KeyValor/internal/storage/datafile"
