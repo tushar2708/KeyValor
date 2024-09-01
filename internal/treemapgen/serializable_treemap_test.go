@@ -19,8 +19,8 @@ func TestSerializableTreeMapEncodeAndDecodeComplexTypes(t *testing.T) {
 	tm.Put("three", records.NewSetCommandRecord("three", []byte("value3")))
 
 	// Encode the TreeMap
-	var encodedBytes *bytes.Buffer
-	err := tm.Encode(encodedBytes)
+	var encodedBytes bytes.Buffer
+	err := tm.Encode(&encodedBytes)
 	require.NoError(t, err)
 
 	decodedMap := NewSerializableTreeMap[string, *records.CommandRecord](utils.StringComparator)
