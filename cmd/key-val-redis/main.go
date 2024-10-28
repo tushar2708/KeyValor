@@ -19,9 +19,6 @@ var addr = ":6379"
 
 func main() {
 	var mu sync.RWMutex
-	// var items = make(map[string][]byte)
-	// var ps redcon.PubSub
-	// go log.Printf("started server at %s", addr)
 
 	homeDir, _ := os.UserHomeDir()
 	keyValurStoreDir := filepath.Join(homeDir, "keyvalor")
