@@ -1,0 +1,64 @@
+# Pre-commit hooks for KeyValor (run from the repo root).
+#
+# Setup:
+#   pre-commit install
+#
+# Usage:
+#   pre-commit run --all-files          # Run all active hooks
+#   pre-commit run <hook-id>            # Run a specific hook
+#
+# To skip hooks temporarily:
+#   git commit --no-verify -m "message"
+#
+# Hook execution order:
+#   1. Security (gitleaks) — repo-wide
+#   2. Go vendor sync (go mod tidy + go mod vendor)
+#   3. Go build check (verify code compiles)
+#   4. Go lint (format via goimports + gci, golangci-lint with NilAway)
+#   5. Go unit tests with coverage
+
+repos:
+  # ============================================
+  # 1. SECURITY HOOKS (run first, repo-wide)
+  # ============================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ============================================
+  # 2-5. GO HOOKS (scoped to .go files)
+  # ============================================
+  - repo: local
+    hooks:
+      - id: go-vendor-sync
+        name: Go vendor sync
+        description: Runs make vendor (go mod tidy + go mod vendor) to keep vendor/ consistent
+        entry: make vendor
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build-check
+        name: Go build check
+        description: Runs make build-check (verifies code compiles without running tests)
+        entry: make build-check
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-lint
+        name: Go lint
+        description: Runs make lint (goimports + gci, golangci-lint with NilAway)
+        entry: make lint
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-unit-tests
+        name: Go unit tests with coverage
+        description: Runs make unit-test-coverage (unit tests with race detection)
+        entry: make unit-test-coverage
+        language: system
+        types: [go]
+        pass_filenames: false

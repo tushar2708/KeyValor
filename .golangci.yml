@@ -1,0 +1,189 @@
+version: "2"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(KeyValor)
+
+linters:
+  default: standard
+  enable:
+    # Tier 1: Nil detection + bug essentials
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - nilaway
+    - errorlint
+    - bodyclose
+    - errchkjson
+    - exhaustive
+    # Tier 2: Bug detection, error checking, performance
+    - gosec
+    - gocritic
+    - makezero
+    - contextcheck
+    - noctx
+    - sqlclosecheck
+    - musttag
+    - wrapcheck
+    - spancheck
+    - prealloc
+    - perfsprint
+    - unconvert
+  disable:
+    - fatcontext  # IMPORTANT: causes auto-fix to convert = to := (variable shadowing). See hooks/pipeline.go:41
+    #
+    # Intentionally skipped linters:
+    #
+    # gochecknoglobals: Already enforced by `make discipline` (Rule 2.2) with
+    #   fine-grained allowlists. All tests run with -race, catching actual data
+    #   races on globals. The linter adds noise (flags pedantigo validators,
+    #   interface compliance checks, sentinel errors, example slices) without
+    #   catching issues beyond what discipline + race detector already cover.
+    #
+    # --- Complexity (overkill for this project) ---
+    # gocognit: Cognitive complexity threshold enforcement.
+    # cyclop: Cyclomatic complexity threshold enforcement.
+    # nestif: Deeply nested if-statement detection.
+    # funlen: Function length threshold enforcement.
+    #
+    # --- Style (not worth the noise) ---
+    # revive: Extensible Go linter (overlaps heavily with staticcheck defaults).
+    # unparam: Detects unused function parameters.
+    # reassign: Detects variable reassignment across package boundaries.
+    # nakedret: Flags naked returns in functions above a length threshold.
+    # modernize: Suggests modern Go idioms (experimental, high false-positive rate).
+    #
+  settings:
+    govet:
+      enable:
+        - nilness
+        - shadow
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    exhaustive:
+      check:
+        - switch
+        - map
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      settings:
+        hugeParam:
+          sizeThreshold: 70
+        rangeValCopy:
+          sizeThreshold: 40
+        rangeExprCopy:
+          sizeThreshold: 40
+        underef:
+          skipRecvDeref: false
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+    custom:
+      nilaway:
+        type: module
+        description: Nil panic detection (Uber)
+        settings:
+          include-pkgs: "KeyValor"
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # Test files - skip most strict checks
+      - path: '.*_test\.go'
+        linters:
+          - bodyclose
+          - errchkjson
+          - exhaustive
+          - errcheck
+          - nilaway
+          - nilerr
+          - nilnesserr
+          - nilnil
+          - errorlint
+          - gosec
+          - wrapcheck
+          - noctx
+          - musttag
+          - gocritic
+          - spancheck
+          - contextcheck
+          - fatcontext
+          - staticcheck
+      # Mock files - skip most strict checks
+      - path: '.*/mocks/.*'
+        linters:
+          - errcheck
+          - nilaway
+          - nilerr
+          - nilnesserr
+          - nilnil
+          - errorlint
+          - exhaustive
+          - gosec
+          - wrapcheck
+          - gocritic
+          - spancheck
+      # Fake repositories for testing
+      - path: '.*fake.*\.go'
+        linters:
+          - nilaway
+          - nilerr
+          - nilnesserr
+          - nilnil
+          - errorlint
+          - exhaustive
+          - wrapcheck
+          - gocritic
+      # Testing utilities
+      - path: '.*/testing/.*'
+        linters:
+          - nilaway
+          - nilerr
+          - nilnesserr
+          - nilnil
+          - errorlint
+          - exhaustive
+          - bodyclose
+          - wrapcheck
+          - gocritic
+          - spancheck
+          - contextcheck
+          - noctx
+      # Repository files - nil,nil is a valid "not found" pattern
+      - path: '.*/repository/.*'
+        linters: [nilnil]
+      # Package names with underscores match directory names - cannot rename without major refactor
+      - linters: [staticcheck]
+        text: "ST1003"
+      # gosec G101: false positives on metric/config constants containing "token"/"key"
+      - linters: [gosec]
+        text: "G101"
+      # typecheck: case-insensitive file name collision false positives on macOS
+      - linters: [typecheck]
+        text: "case-insensitive file name collision"

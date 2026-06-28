@@ -10,7 +10,6 @@ import (
 	"KeyValor/config"
 	"KeyValor/internal/storage/datafile"
 	"KeyValor/internal/storage/storagecommon"
-	"KeyValor/internal/utils/fileutils"
 )
 
 type HashTableStorage struct {
@@ -47,13 +46,10 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 		return nil, err
 	}
 
-	keyLocationHash := NewLogStructuredHashTableIndex()
-
 	indexFilePath := filepath.Join(cfg.Directory, INDEX_FILENAME)
-	if fileutils.FileExists(indexFilePath) {
-		if err := keyLocationHash.LoadFromFile(indexFilePath); err != nil {
-			return nil, fmt.Errorf("error decoding index file: %w", err)
-		}
+	keyLocationIndex := NewCheckpointIndex(indexFilePath)
+	if err := keyLocationIndex.Open(); err != nil {
+		return nil, fmt.Errorf("error opening index: %w", err)
 	}
 
 	cs, err := storagecommon.NewCommonStorage(cfg)
@@ -64,7 +60,7 @@ func NewHashTableStorage(cfg *config.DBCfgOpts) (*HashTableStorage, error) {
 	return &HashTableStorage{
 		CommonStorage:       cs,
 		ActiveDataFile:      activedatafile,
-		keyLocationIndex:    keyLocationHash,
+		keyLocationIndex:    keyLocationIndex,
 		olddatafileFilesMap: olddatafileFiles,
 	}, nil
 }
@@ -93,19 +89,18 @@ func listHashTableDataFiles(directory string) (files []string, ids []int, err er
 }
 
 func (hts *HashTableStorage) Init() error {
-	// run periodic compaction
 	go hts.CompactionLoop(hts.Cfg.CompactInterval)
-
-	// run periodic sync
 	go hts.FileRotationLoop(hts.Cfg.CheckFileSizeInterval)
-
+	go hts.IndexFlushLoop(hts.Cfg.SyncWriteInterval)
 	return nil
 }
 
 func (hts *HashTableStorage) Close() error {
-	// persist the index to the disk
-	if err := hts.persistIndexFile(); err != nil {
-		return fmt.Errorf("error persisting index file: %w", err)
+	if err := hts.keyLocationIndex.Flush(); err != nil {
+		return fmt.Errorf("error flushing index on close: %w", err)
+	}
+	if err := hts.keyLocationIndex.Close(); err != nil {
+		return fmt.Errorf("error closing index: %w", err)
 	}
 
 	// close the active file

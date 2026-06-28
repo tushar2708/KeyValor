@@ -134,7 +134,7 @@ func (lsmt *LSMTreeStorage) processFile(
 			return err
 		}
 	} else if filepath.Ext(filePath) == SSTABLE_FILE_EXTENSION {
-		//it's an SST file (SSTable)
+		// it's an SST file (SSTable)
 		fileNumber := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(filePath), SSTABLE_FILE_EXTENSION), SSTABLE_FILE_PREFIX)
 		timeStamp, err := strconv.ParseInt(fileNumber, 10, 32)
 		if err != nil {

@@ -1,7 +1,7 @@
 package lsmtree
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"KeyValor/constants"
@@ -95,7 +95,7 @@ func (lts *LSMTreeStorage) Set(key string, value []byte) error {
 	defer lts.Unlock()
 
 	if err := validateEntry(key, value); err != nil {
-		return fmt.Errorf("invalid key or value")
+		return errors.New("invalid key or value")
 	}
 
 	return lts.set(lts.ActiveWALFile, key, value, nil)

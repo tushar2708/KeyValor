@@ -1,16 +1,17 @@
 package sstable
 
 import (
-	"KeyValor/constants"
-	"KeyValor/internal/records"
-	"KeyValor/internal/storage/datafile"
-	"KeyValor/internal/treemapgen"
-	"KeyValor/log"
 	"bytes"
 	"fmt"
 	"sync"
 
 	"github.com/emirpasic/gods/utils"
+
+	"KeyValor/constants"
+	"KeyValor/internal/records"
+	"KeyValor/internal/storage/datafile"
+	"KeyValor/internal/treemapgen"
+	"KeyValor/log"
 )
 
 type SSTable struct {
@@ -88,12 +89,12 @@ func NewSSTableLoadedFromFile(filePath string) (*SSTable, error) {
 	indexBytes := make([]byte, sst.metaData.IndexSize)
 	n, err := sst.readOnlySstFile.ReadAt(indexBytes, sst.metaData.IndexStartOffset)
 	if err != nil || n != int(sst.metaData.IndexSize) {
-		return nil, fmt.Errorf("couldn't read sparse index from SST file, error: %v", err)
+		return nil, fmt.Errorf("couldn't read sparse index from SST file, error: %w", err)
 	}
 
 	err = sst.sparseIndex.Decode(indexBytes)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding sparse index read from SST file: %v", err)
+		return nil, fmt.Errorf("error decoding sparse index read from SST file: %w", err)
 	}
 
 	// We don't load the actual data into the SSSTable structure.
@@ -289,7 +290,7 @@ func (sst *SSTable) Query(key string) (*records.CommandRecord, error) {
 	}
 
 	// read records from lowerBoundPos to upperBoundPos
-	var currentPos int64 = lowerboundPosition.Start
+	var currentPos = lowerboundPosition.Start
 	endOfScanOffset := upperboundPosition.Start + upperboundPosition.Size
 
 	encoder := records.NewRecordEncoder[string, *records.CommandHeader, *records.CommandRecord]()

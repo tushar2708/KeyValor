@@ -2,7 +2,7 @@ package dataconvutils
 
 import (
 	"encoding/binary"
-	"fmt"
+	"strconv"
 )
 
 // Helper function to convert bytes to int
@@ -32,5 +32,5 @@ func Int64ToBytes(i int64) []byte {
 
 // Helper function to convert int to bytes
 func IntToBytes(i int) []byte {
-	return []byte(fmt.Sprintf("%d", i))
+	return []byte(strconv.Itoa(i))
 }

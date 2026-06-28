@@ -1,4 +1,12 @@
 main
 .vscode
+.idea
+
 vendor
 cmd/*/__debug_bin*
+
+
+
+test-outputs/
+docs/
+others/

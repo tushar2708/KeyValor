@@ -1,9 +1,10 @@
 package sstable
 
 import (
-	"KeyValor/internal/storage/datafile"
 	"bytes"
 	"encoding/binary"
+
+	"KeyValor/internal/storage/datafile"
 )
 
 type SSTableMetaData struct {

@@ -1,13 +1,14 @@
 package treemapgen
 
 import (
-	"KeyValor/internal/records"
 	"bytes"
 	"fmt"
 	"reflect"
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/emirpasic/gods/utils"
+
+	"KeyValor/internal/records"
 )
 
 // SerializableTreeMap is a generic wrapper around treemap.Map to add type safety and serializability

@@ -1,12 +1,13 @@
 package treemapgen
 
 import (
-	"KeyValor/internal/records"
 	"bytes"
 	"testing"
 
 	"github.com/emirpasic/gods/utils"
 	"github.com/stretchr/testify/require"
+
+	"KeyValor/internal/records"
 )
 
 func TestSerializableTreeMapEncodeAndDecodeComplexTypes(t *testing.T) {

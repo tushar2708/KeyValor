@@ -133,7 +133,7 @@ func (cr *CommandRecord) Encode(buff *bytes.Buffer) error {
 	if err := cr.Header.Encode(buff); err != nil {
 		return err
 	}
-	if _, err := buff.Write([]byte(cr.Key)); err != nil {
+	if _, err := buff.WriteString(cr.Key); err != nil {
 		return err
 	}
 	if _, err := buff.Write(cr.Value); err != nil {

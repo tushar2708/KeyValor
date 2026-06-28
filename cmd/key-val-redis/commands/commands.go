@@ -1,13 +1,14 @@
 package commands
 
 import (
-	"KeyValor"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/tidwall/redcon"
+
+	"KeyValor"
 )
 
 const InfalidArgumentsErrorMsg = "ERR wrong number of arguments for '%s' command"

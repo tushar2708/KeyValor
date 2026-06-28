@@ -1,11 +1,13 @@
 package datafile
 
 import (
-	"KeyValor/internal/utils/strictchecks"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"KeyValor/internal/utils/strictchecks"
 )
 
 type DataFileMode int8
@@ -58,7 +60,7 @@ func newDataFileCommon(filePath string, fileID int, mode DataFileMode) (*ReadWri
 
 		stat, err := rwdf.writer.Stat()
 		if err != nil {
-			return nil, fmt.Errorf("error fetching file stats: %v", err)
+			return nil, fmt.Errorf("error fetching file stats: %w", err)
 		}
 
 		rwdf.writeOffset = stat.Size()
@@ -84,7 +86,7 @@ func (rwdf *ReadWriteDataFile) Size() (int64, error) {
 	if rwdf.writer != nil {
 		stat, err := rwdf.writer.Stat()
 		if err != nil {
-			return -1, fmt.Errorf("error fetching file size: %v", err)
+			return -1, fmt.Errorf("error fetching file size: %w", err)
 		}
 		return stat.Size(), nil
 	}
@@ -92,12 +94,12 @@ func (rwdf *ReadWriteDataFile) Size() (int64, error) {
 	if rwdf.reader != nil {
 		stat, err := rwdf.reader.Stat()
 		if err != nil {
-			return -1, fmt.Errorf("error fetching file size: %v", err)
+			return -1, fmt.Errorf("error fetching file size: %w", err)
 		}
 		return stat.Size(), nil
 	}
 
-	return -1, fmt.Errorf("both reader and writer are nil, can't get size")
+	return -1, errors.New("both reader and writer are nil, can't get size")
 }
 
 func (rwdf *ReadWriteDataFile) Sync() error {

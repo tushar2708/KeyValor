@@ -2,10 +2,13 @@ package lsmtree
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/emirpasic/gods/utils"
 
 	"KeyValor/constants"
 	"KeyValor/internal/records"
@@ -14,8 +17,6 @@ import (
 	"KeyValor/internal/storage/storagecommon"
 	"KeyValor/internal/treemapgen"
 	"KeyValor/internal/utils/fileutils"
-
-	"github.com/emirpasic/gods/utils"
 )
 
 func (lts *LSMTreeStorage) getAndValidateMuLocked(key string) ([]byte, error) {
@@ -76,7 +77,7 @@ func handleFoundCommand(command *records.CommandRecord) (storagecommon.DataRecor
 	if err == nil {
 		return *data, nil
 	}
-	if err == constants.ErrKeyIsDeleted {
+	if errors.Is(err, constants.ErrKeyIsDeleted) {
 		return storagecommon.DataRecord{}, constants.ErrKeyMissing
 	}
 

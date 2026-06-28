@@ -87,7 +87,7 @@ func (re *RecordEncoder[K, H, R]) EncodeF(record R, writer io.Writer) error {
 	}
 
 	// always write the key as a string (individual decoders will have to take care of this)
-	if _, err := buff.Write([]byte(fmt.Sprintf("%v", key))); err != nil {
+	if _, err := fmt.Fprintf(buff, "%v", key); err != nil {
 		return fmt.Errorf("failed to write key: %w", err)
 	}
 

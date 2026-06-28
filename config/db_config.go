@@ -1,8 +1,9 @@
 package config
 
 import (
-	"KeyValor/constants"
 	"time"
+
+	"KeyValor/constants"
 )
 
 type DBCfgOpts struct {

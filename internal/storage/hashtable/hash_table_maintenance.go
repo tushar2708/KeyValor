@@ -12,14 +12,6 @@ import (
 	"KeyValor/log"
 )
 
-func (hts *HashTableStorage) persistIndexFile() error {
-	indexFilePath := filepath.Join(hts.Cfg.Directory, INDEX_FILENAME)
-	if err := hts.keyLocationIndex.DumpToFile(indexFilePath); err != nil {
-		return fmt.Errorf("error encoding index file: %w", err)
-	}
-	return nil
-}
-
 func (hts *HashTableStorage) FileRotationLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -27,6 +19,20 @@ func (hts *HashTableStorage) FileRotationLoop(interval time.Duration) {
 	for range ticker.C {
 		if err := hts.maybeRotateActiveFile(); err != nil {
 			return
+		}
+	}
+}
+
+func (hts *HashTableStorage) IndexFlushLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		hts.RLock()
+		err := hts.keyLocationIndex.Flush()
+		hts.RUnlock()
+		if err != nil {
+			log.Errorf("index flush error: %v", err)
 		}
 	}
 }
@@ -91,7 +97,7 @@ func (hts *HashTableStorage) deleteExpiredKeysFromIndex() error {
 		if record.IsExpired() {
 			err := hts.Delete(key)
 			if err != nil {
-				return fmt.Errorf("unable to delete expired record: %v", err)
+				return fmt.Errorf("unable to delete expired record: %w", err)
 			}
 		}
 		return nil
@@ -111,9 +117,7 @@ func (hts *HashTableStorage) garbageCollectOldFilesDBMuLocked() error {
 		return err
 	}
 
-	// mergedatafileFiles updates the indexes as it merges the files
-	// so we need to persist those changes
-	if err := hts.persistIndexFile(); err != nil {
+	if err := hts.keyLocationIndex.Flush(); err != nil {
 		return err
 	}
 
@@ -194,7 +198,7 @@ func (hts *HashTableStorage) mergedatafileFiles(tempMergedFilePath string) error
 	hts.keyLocationIndex.Map(func(key string, metaData storagecommon.Meta) error {
 		record, err := hts.get(key)
 		if err != nil {
-			return fmt.Errorf("error getting key(%s): %v", key, err)
+			return fmt.Errorf("error getting key(%s): %w", key, err)
 		}
 
 		expiryTimeUnixNano := record.Header.GetExpiry()

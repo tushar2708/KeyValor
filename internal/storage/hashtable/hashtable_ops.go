@@ -1,6 +1,7 @@
 package hashtable
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -95,7 +96,7 @@ func (hts *HashTableStorage) Set(key string, value []byte) error {
 	defer hts.Unlock()
 
 	if err := validateEntry(key, value); err != nil {
-		return fmt.Errorf("invalid key or value")
+		return errors.New("invalid key or value")
 	}
 
 	return hts.set(hts.ActiveDataFile, key, value, nil)
