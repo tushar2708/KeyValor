@@ -26,8 +26,8 @@ Redis Client (redis-cli, any Redis SDK)
 │  Storage Engine (pluggable)                              │
 │                                                          │
 │  ┌──────────────────────┐  ┌───────────────────────────┐ │
-│  │  HashTableStorage    │  │  LSMTreeStorage            │ │
-│  │  (stable, wired in)  │  │  (partially implemented)   │ │
+│  │  HashTableStorage    │  │  LSMTreeStorage           │ │
+│  │  (stable, wired in)  │  │  (partially implemented)  │ │
 │  └──────────────────────┘  └───────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘
                │
@@ -209,12 +209,14 @@ After compaction: one file, one copy of each live key, all overwritten/deleted s
 
 ### Index Persistence
 
-`keyLocationIndex` is a `map[string]Meta` serialized with `encoding/gob`.
+`keyLocationIndex` is typed as `DatabaseIndex` (interface with `Open/Flush/FlushSnapshot/Close`). The concrete implementation is `CheckpointIndex` — a gob snapshot of `map[string]Meta`.
 
-- **Load**: On startup, if `hashtable.index` exists, gob-decode it. The DB is immediately query-ready — no data file replay needed.
-- **Flush**: Only on `Close()`. There is no periodic flush. `SyncWriteInterval` is configured but not connected to any goroutine.
+- **Load**: `Open()` on startup gob-decodes `hashtable.index` if it exists; no-op otherwise.
+- **Flush**: Atomic write via `fileutils.AtomicReplaceFile` — unique temp file (`os.CreateTemp`), fsync, rename, dir-sync. Crash during flush leaves the previous snapshot intact.
+- **Periodic flush**: `IndexFlushLoop` goroutine fires every `SyncWriteInterval` (default 1 min). It snapshots the map under `RLock`, releases the lock, then flushes — writes are only blocked for the in-memory copy, not the disk I/O.
+- **Shutdown flush**: `Close()` acquires the write lock, calls `Flush()`, then `Close()` on the index before closing data files.
 
-**Crash risk**: A crash without clean shutdown loses all index updates since the last `Close()`. On the next start, `hashtable.index` will be stale and there is no fallback to rebuild the index by replaying data files.
+**Crash risk**: At most `SyncWriteInterval` of index updates can be lost.
 
 ### Lock File
 
@@ -436,11 +438,12 @@ NewKeyValorDB()
         1. Glob wal_file_*.db files; sort by numeric ID
         2. Open each as ReadOnlyDataFile → olddatafileFilesMap
         3. Open ID=max+1 as new AppendOnlyDataFile → ActiveDataFile
-        4. If hashtable.index exists → gob.Decode into keyLocationIndex
+        4. NewCheckpointIndex(indexFilePath) → Open() → gob.Decode if file exists
         5. unix.Flock(LOCK_EX|LOCK_NB) on store.lock
   └── storage.Init()
         1. go CompactionLoop(CompactInterval)
         2. go FileRotationLoop(CheckFileSizeInterval)
+        3. go IndexFlushLoop(SyncWriteInterval)
 ```
 
 ## Shutdown Sequence (HashTableStorage)
@@ -448,7 +451,7 @@ NewKeyValorDB()
 ```
 db.Shutdown()
   └── storage.Close()
-        1. gob.Encode(keyLocationIndex) → hashtable.index
+        1. hts.Lock() → keyLocationIndex.Flush() → keyLocationIndex.Close() → hts.Unlock()
         2. ActiveDataFile.Close()
         3. Close each file in olddatafileFilesMap
         4. unix.Flock(LOCK_UN) + fd.Close() + os.Remove(store.lock)
@@ -462,7 +465,7 @@ See `docs/01-gaps.md` for the full gap list with severity ratings. Summary:
 
 | Area | Gap |
 |---|---|
-| HashTable index | Only flushed on shutdown — no periodic flush; no replay from data files on crash |
+| HashTable index | Periodic flush via `IndexFlushLoop` (every `SyncWriteInterval`); atomic write via temp+rename; no replay from data files on crash |
 | LSMTreeStorage | `Init()` and `Close()` missing; cannot be wired into `NewKeyValorDB` |
 | LSMTreeStorage | `Exists`, `Keys`, `AllKeys` panic |
 | LSMTreeStorage | Bug in `NewLSMTreeStorage`: returns a fresh struct that discards loaded state |

@@ -4,10 +4,10 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"KeyValor/constants"
 	"KeyValor/internal/storage/storagecommon"
+	"KeyValor/internal/utils/fileutils"
 	"KeyValor/log"
 )
 
@@ -51,43 +51,16 @@ func (ci *CheckpointIndex) Open() error {
 // This guarantees that a crash during Flush does not corrupt the last
 // good snapshot.
 func (ci *CheckpointIndex) Flush() error {
-	tmpPath := ci.indexFilePath + ".tmp"
+	return ci.FlushSnapshot(ci.hashMap)
+}
 
-	file, err := os.Create(tmpPath)
-	if err != nil {
-		return fmt.Errorf("error creating temp index file: %w", err)
-	}
-
-	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(ci.hashMap); err != nil {
-		file.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("error encoding index: %w", err)
-	}
-
-	if err := file.Sync(); err != nil {
-		file.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("error syncing temp index file: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("error closing temp index file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, ci.indexFilePath); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("error renaming temp index file: %w", err)
-	}
-
-	// Sync the directory so the rename is durable.
-	dir := filepath.Dir(ci.indexFilePath)
-	if err := syncDir(dir); err != nil {
-		return fmt.Errorf("error syncing index directory: %w", err)
-	}
-
-	return nil
+// FlushSnapshot atomically writes a snapshot of the index to disk.
+// This is separate from Flush() so callers can take a snapshot under lock,
+// release the lock, and flush the snapshot without holding locks (prevents write latency spikes).
+func (ci *CheckpointIndex) FlushSnapshot(snapshot map[string]storagecommon.Meta) error {
+	return fileutils.AtomicReplaceFile(ci.indexFilePath, func(f *os.File) error {
+		return gob.NewEncoder(f).Encode(snapshot)
+	})
 }
 
 // Close is a no-op for Strategy 1 (the periodic flush loop handles persistence).
@@ -120,13 +93,4 @@ func (ci *CheckpointIndex) Map(f func(key string, metaData storagecommon.Meta) e
 			log.Errorf("error in Map, err: %v", err)
 		}
 	}
-}
-
-func syncDir(dir string) error {
-	f, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return f.Sync()
 }

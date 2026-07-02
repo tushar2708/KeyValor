@@ -96,12 +96,16 @@ func (hts *HashTableStorage) Init() error {
 }
 
 func (hts *HashTableStorage) Close() error {
+	hts.Lock()
 	if err := hts.keyLocationIndex.Flush(); err != nil {
+		hts.Unlock()
 		return fmt.Errorf("error flushing index on close: %w", err)
 	}
 	if err := hts.keyLocationIndex.Close(); err != nil {
+		hts.Unlock()
 		return fmt.Errorf("error closing index: %w", err)
 	}
+	hts.Unlock()
 
 	// close the active file
 	if err := hts.ActiveDataFile.Close(); err != nil {

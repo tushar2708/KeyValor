@@ -29,9 +29,14 @@ func (hts *HashTableStorage) IndexFlushLoop(interval time.Duration) {
 
 	for range ticker.C {
 		hts.RLock()
-		err := hts.keyLocationIndex.Flush()
+		snapshot := make(map[string]storagecommon.Meta)
+		hts.keyLocationIndex.Map(func(key string, meta storagecommon.Meta) error {
+			snapshot[key] = meta
+			return nil
+		})
 		hts.RUnlock()
-		if err != nil {
+
+		if err := hts.keyLocationIndex.FlushSnapshot(snapshot); err != nil {
 			log.Errorf("index flush error: %v", err)
 		}
 	}

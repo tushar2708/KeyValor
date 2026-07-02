@@ -7,5 +7,6 @@ type DatabaseIndex interface {
 	Map(f func(key string, metaData Meta) error)
 	Open() error
 	Flush() error
+	FlushSnapshot(snapshot map[string]Meta) error
 	Close() error
 }
